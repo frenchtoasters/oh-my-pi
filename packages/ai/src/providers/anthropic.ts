@@ -185,7 +185,8 @@ export function buildAnthropicHeaders(options: AnthropicHeaderOptions): Record<s
 	}
 }
 
-type AnthropicCacheControl = { type: "ephemeral"; ttl?: "1h" | "5m" };
+/** @internal Exported for testing only. */
+export type AnthropicCacheControl = { type: "ephemeral"; ttl?: "1h" | "5m" };
 
 type AnthropicSamplingParams = MessageCreateParamsStreaming & {
 	top_p?: number;
@@ -1482,7 +1483,8 @@ function applyCacheControlToLastTextBlock(
 	applyCacheControlToLastBlock(blocks, cacheControl);
 }
 
-function applyPromptCaching(params: MessageCreateParamsStreaming, cacheControl?: AnthropicCacheControl): void {
+/** @internal Exported for testing only. */
+export function applyPromptCaching(params: MessageCreateParamsStreaming, cacheControl?: AnthropicCacheControl): void {
 	if (!cacheControl) return;
 
 	// Skip if cache_control breakpoints were already placed externally on messages.
@@ -1510,51 +1512,26 @@ function applyPromptCaching(params: MessageCreateParamsStreaming, cacheControl?:
 
 	if (cacheBreakpointsUsed >= MAX_CACHE_BREAKPOINTS) return;
 
-	const userIndexes = params.messages
-		.map((message, index) => (message.role === "user" ? index : -1))
-		.filter(index => index >= 0);
-
-	if (userIndexes.length >= 2) {
-		const penultimateUserIndex = userIndexes[userIndexes.length - 2];
-		const penultimateUser = params.messages[penultimateUserIndex];
-		if (penultimateUser) {
-			if (typeof penultimateUser.content === "string") {
-				const contentBlock: ContentBlockParam & CacheControlBlock = {
-					type: "text",
-					text: penultimateUser.content,
-					cache_control: cacheControl,
-				};
-				penultimateUser.content = [contentBlock];
-				cacheBreakpointsUsed++;
-			} else if (Array.isArray(penultimateUser.content) && penultimateUser.content.length > 0) {
-				applyCacheControlToLastTextBlock(
-					penultimateUser.content as Array<ContentBlockParam & CacheControlBlock>,
-					cacheControl,
-				);
-				cacheBreakpointsUsed++;
-			}
-		}
-	}
-
-	if (cacheBreakpointsUsed >= MAX_CACHE_BREAKPOINTS) return;
-
-	if (userIndexes.length >= 1) {
-		const lastUserIndex = userIndexes[userIndexes.length - 1];
-		const lastUser = params.messages[lastUserIndex];
-		if (lastUser) {
-			if (typeof lastUser.content === "string") {
-				const contentBlock: ContentBlockParam & CacheControlBlock = {
-					type: "text",
-					text: lastUser.content,
-					cache_control: cacheControl,
-				};
-				lastUser.content = [contentBlock];
-			} else if (Array.isArray(lastUser.content) && lastUser.content.length > 0) {
-				applyCacheControlToLastTextBlock(
-					lastUser.content as Array<ContentBlockParam & CacheControlBlock>,
-					cacheControl,
-				);
-			}
+	// Cache the last N messages regardless of role (user or assistant).
+	// This aligns with OpenCode's aggressive caching strategy — any recent message
+	// is worth caching for turn-level cache hits. The number of message breakpoints
+	// is bounded by the remaining budget (MAX_CACHE_BREAKPOINTS - tools - system).
+	for (let i = params.messages.length - 1; i >= 0 && cacheBreakpointsUsed < MAX_CACHE_BREAKPOINTS; i--) {
+		const message = params.messages[i];
+		if (typeof message.content === "string") {
+			const contentBlock: ContentBlockParam & CacheControlBlock = {
+				type: "text",
+				text: message.content,
+				cache_control: cacheControl,
+			};
+			message.content = [contentBlock];
+			cacheBreakpointsUsed++;
+		} else if (Array.isArray(message.content) && message.content.length > 0) {
+			applyCacheControlToLastTextBlock(
+				message.content as Array<ContentBlockParam & CacheControlBlock>,
+				cacheControl,
+			);
+			cacheBreakpointsUsed++;
 		}
 	}
 }

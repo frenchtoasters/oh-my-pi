@@ -5,7 +5,9 @@ import * as path from "node:path";
 import * as tls from "node:tls";
 import { Effort } from "@oh-my-pi/pi-ai";
 import {
+	type AnthropicCacheControl,
 	applyClaudeToolPrefix,
+	applyPromptCaching,
 	buildAnthropicClientOptions,
 	buildAnthropicHeaders,
 	buildAnthropicSystemBlocks,
@@ -905,5 +907,180 @@ describe("Anthropic request fingerprint alignment", () => {
 		expect(applyClaudeToolPrefix("Read", "proxy_")).toBe("proxy_Read");
 		expect(applyClaudeToolPrefix("proxy_Read", "proxy_")).toBe("proxy_Read");
 		expect(stripClaudeToolPrefix("proxy_Read", "proxy_")).toBe("Read");
+	});
+});
+
+describe("applyPromptCaching message-level cache breakpoints", () => {
+	const EPHEMERAL: AnthropicCacheControl = { type: "ephemeral" };
+
+	function makeParams(overrides: {
+		messages: Array<{ role: "user" | "assistant"; content: string | Array<Record<string, unknown>> }>;
+		tools?: Array<Record<string, unknown>>;
+		system?: Array<Record<string, unknown>>;
+	}) {
+		return {
+			model: "claude-sonnet-4-5",
+			max_tokens: 8192,
+			stream: true as const,
+			...overrides,
+		} as any; // MessageCreateParamsStreaming
+	}
+
+	it("caches last 2 messages regardless of role when tools+system consume budget", () => {
+		const params = makeParams({
+			messages: [
+				{ role: "user", content: "msg-1" },
+				{ role: "assistant", content: [{ type: "text", text: "msg-2" }] },
+				{ role: "user", content: "msg-3" },
+				{ role: "assistant", content: [{ type: "text", text: "msg-4" }] },
+				{ role: "user", content: "msg-5" },
+			],
+			tools: [{ name: "Read", input_schema: { type: "object" } }],
+			system: [{ type: "text", text: "You are helpful" }],
+		});
+		applyPromptCaching(params, EPHEMERAL);
+		// Tools + system consume 2 breakpoints, leaving 2 for messages
+		// Last 2 messages (index 4 and 3) should have cache_control
+		// Messages 0-2 should NOT have cache_control
+		for (let i = 0; i < 3; i++) {
+			const content = params.messages[i].content;
+			if (Array.isArray(content)) {
+				for (const block of content) {
+					expect(block.cache_control).toBeUndefined();
+				}
+			} else {
+				expect(typeof content).toBe("string");
+			}
+		}
+		// Index 3 (assistant, array content) — last text block should have cache_control
+		expect(params.messages[3].content[0].cache_control).toEqual(EPHEMERAL);
+		// Index 4 (user, string content) — converted to array with cache_control
+		expect(Array.isArray(params.messages[4].content)).toBe(true);
+		expect(params.messages[4].content[0].cache_control).toEqual(EPHEMERAL);
+	});
+
+	it("caches both messages when only 2 exist", () => {
+		const params = makeParams({
+			messages: [
+				{ role: "user", content: "hello" },
+				{ role: "assistant", content: [{ type: "text", text: "hi" }] },
+			],
+		});
+		applyPromptCaching(params, EPHEMERAL);
+		// Both messages should have cache_control
+		expect(Array.isArray(params.messages[0].content)).toBe(true);
+		expect(params.messages[0].content[0].cache_control).toEqual(EPHEMERAL);
+		expect(params.messages[1].content[0].cache_control).toEqual(EPHEMERAL);
+	});
+
+	it("caches a single message", () => {
+		const params = makeParams({
+			messages: [{ role: "user", content: "only one" }],
+		});
+		applyPromptCaching(params, EPHEMERAL);
+		expect(Array.isArray(params.messages[0].content)).toBe(true);
+		expect(params.messages[0].content[0].cache_control).toEqual(EPHEMERAL);
+	});
+
+	it("caches assistant message with only tool_use blocks via fallback", () => {
+		const params = makeParams({
+			messages: [
+				{ role: "user", content: "do something" },
+				{ role: "assistant", content: [{ type: "tool_use", id: "t1", name: "Read", input: {} }] },
+			],
+		});
+		applyPromptCaching(params, EPHEMERAL);
+		// The tool_use block should get cache_control (via applyCacheControlToLastBlock fallback)
+		expect(params.messages[1].content[0].cache_control).toEqual(EPHEMERAL);
+		// User message (index 0) also cached
+		expect(Array.isArray(params.messages[0].content)).toBe(true);
+		expect(params.messages[0].content[0].cache_control).toEqual(EPHEMERAL);
+	});
+
+	it("caches tool-result user message", () => {
+		const params = makeParams({
+			messages: [
+				{ role: "user", content: "run the tool" },
+				{ role: "assistant", content: [{ type: "tool_use", id: "t1", name: "Read", input: {} }] },
+				{ role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: "file contents" }] },
+			],
+		});
+		applyPromptCaching(params, EPHEMERAL);
+		// No tools/system, budget=4 — all 3 messages cached
+		expect(params.messages[2].content[0].cache_control).toEqual(EPHEMERAL);
+		expect(params.messages[1].content[0].cache_control).toEqual(EPHEMERAL);
+		// First message also cached (string converted to array)
+		expect(Array.isArray(params.messages[0].content)).toBe(true);
+		expect(params.messages[0].content[0].cache_control).toEqual(EPHEMERAL);
+	});
+
+	it("respects budget when tools and system consume breakpoints", () => {
+		const params = makeParams({
+			messages: [
+				{ role: "user", content: "msg-1" },
+				{ role: "assistant", content: [{ type: "text", text: "msg-2" }] },
+				{ role: "user", content: "msg-3" },
+				{ role: "assistant", content: [{ type: "text", text: "msg-4" }] },
+			],
+			tools: [{ name: "Read", input_schema: { type: "object" } }],
+			system: [{ type: "text", text: "You are helpful" }],
+		});
+		applyPromptCaching(params, EPHEMERAL);
+		// Tools and system consume 2 breakpoints, leaving 2 for messages
+		expect(params.tools[0].cache_control).toEqual(EPHEMERAL);
+		expect(params.system[0].cache_control).toEqual(EPHEMERAL);
+		// Only last 2 messages cached (index 3 and 2)
+		expect(params.messages[3].content[0].cache_control).toEqual(EPHEMERAL);
+		expect(Array.isArray(params.messages[2].content)).toBe(true);
+		expect(params.messages[2].content[0].cache_control).toEqual(EPHEMERAL);
+		// Messages 0 and 1 NOT cached
+		expect(typeof params.messages[0].content).toBe("string");
+		const msg1Content = params.messages[1].content;
+		expect(Array.isArray(msg1Content)).toBe(true);
+		for (const block of msg1Content) {
+			expect(block.cache_control).toBeUndefined();
+		}
+	});
+
+	it("uses full budget for messages when no tools or system", () => {
+		const params = makeParams({
+			messages: [
+				{ role: "user", content: "msg-1" },
+				{ role: "assistant", content: [{ type: "text", text: "msg-2" }] },
+				{ role: "user", content: "msg-3" },
+				{ role: "assistant", content: [{ type: "text", text: "msg-4" }] },
+				{ role: "user", content: "msg-5" },
+			],
+		});
+		applyPromptCaching(params, EPHEMERAL);
+		// No tools or system, so all 4 breakpoints go to messages (last 4)
+		// Messages 1-4 cached, message 0 NOT cached
+		expect(typeof params.messages[0].content).toBe("string");
+		expect(params.messages[1].content[0].cache_control).toEqual(EPHEMERAL);
+		expect(Array.isArray(params.messages[2].content)).toBe(true);
+		expect(params.messages[2].content[0].cache_control).toEqual(EPHEMERAL);
+		expect(params.messages[3].content[0].cache_control).toEqual(EPHEMERAL);
+		expect(Array.isArray(params.messages[4].content)).toBe(true);
+		expect(params.messages[4].content[0].cache_control).toEqual(EPHEMERAL);
+	});
+
+	it("handles empty messages array gracefully", () => {
+		const params = makeParams({ messages: [] });
+		applyPromptCaching(params, EPHEMERAL);
+		expect(params.messages).toHaveLength(0);
+	});
+
+	it("skips caching when cacheControl is undefined", () => {
+		const params = makeParams({
+			messages: [
+				{ role: "user", content: "hello" },
+				{ role: "assistant", content: [{ type: "text", text: "hi" }] },
+			],
+		});
+		applyPromptCaching(params, undefined);
+		// String content should remain string (not converted to array)
+		expect(typeof params.messages[0].content).toBe("string");
+		// Array content should not have cache_control
+		expect(params.messages[1].content[0].cache_control).toBeUndefined();
 	});
 });

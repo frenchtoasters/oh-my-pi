@@ -1425,29 +1425,84 @@ export function xiaomiModelManagerOptions(
 // ---------------------------------------------------------------------------
 // 21. LiteLLM
 // ---------------------------------------------------------------------------
+const LITELLM_PROVIDER_PREFIXES = [
+	"bedrock/anthropic.", // Must precede "bedrock/" — strips "bedrock/anthropic.claude-v2" → "claude-v2"
+	"anthropic/",
+	"google/",
+	"vertex_ai/",
+	"bedrock/",
+] as const;
+
+function inferLitellmApi(modelId: string, entry: OpenAICompatibleModelRecord): Api {
+	const id = modelId.toLowerCase();
+	const ownedBy = typeof entry.owned_by === "string" ? entry.owned_by.toLowerCase() : "";
+
+	// Anthropic detection: prefix, owned_by, or model name pattern
+	if (id.startsWith("anthropic/") || ownedBy === "anthropic" || /\bclaude\b/.test(id)) {
+		return "anthropic-messages";
+	}
+
+	// Google detection: prefix, owned_by, or model name pattern
+	if (id.startsWith("google/") || id.startsWith("vertex_ai/") || ownedBy === "google" || /\bgemini\b/.test(id)) {
+		return "google-generative-ai";
+	}
+
+	// Default: OpenAI-compatible (existing behavior)
+	return "openai-completions";
+}
+
+function stripLitellmModelPrefix(modelId: string): string {
+	for (const prefix of LITELLM_PROVIDER_PREFIXES) {
+		if (modelId.startsWith(prefix)) {
+			return modelId.slice(prefix.length);
+		}
+	}
+	return modelId;
+}
+
+function deriveLitellmBaseUrl(baseUrl: string, api: Api): string {
+	// baseUrl is typically "http://localhost:4000/v1" — strip /v1 suffix to get proxy root
+	const proxyRoot = baseUrl.replace(/\/v1\/?$/, "");
+
+	switch (api) {
+		case "anthropic-messages":
+			return `${proxyRoot}/anthropic`;
+		case "google-generative-ai":
+			return `${proxyRoot}/gemini`;
+		default:
+			return baseUrl; // Keep original /v1 URL for OpenAI-compat
+	}
+}
 
 export interface LiteLLMModelManagerConfig {
 	apiKey?: string;
 	baseUrl?: string;
 }
 
-export function litellmModelManagerOptions(
-	config?: LiteLLMModelManagerConfig,
-): ModelManagerOptions<"openai-completions"> {
+export function litellmModelManagerOptions(config?: LiteLLMModelManagerConfig): ModelManagerOptions<Api> {
 	const apiKey = config?.apiKey;
 	const baseUrl = config?.baseUrl ?? "http://localhost:4000/v1";
-	const references = createBundledReferenceMap<"openai-completions">("litellm");
+	const references = createBundledReferenceMap<Api>("litellm");
 	return {
 		providerId: "litellm",
 		fetchDynamicModels: () =>
-			fetchOpenAICompatibleModels({
+			fetchOpenAICompatibleModels<Api>({
 				api: "openai-completions",
 				provider: "litellm",
 				baseUrl,
 				apiKey,
 				mapModel: (entry, defaults) => {
+					const api = inferLitellmApi(defaults.id, entry);
 					const reference = references.get(defaults.id);
-					return mapWithBundledReference(entry, defaults, reference);
+					const mapped = mapWithBundledReference(entry, defaults, reference);
+					const isNativelyRouted = api !== "openai-completions";
+					return {
+						...mapped,
+						api,
+						baseUrl: deriveLitellmBaseUrl(baseUrl, api),
+						provider: "litellm",
+						...(isNativelyRouted ? { id: stripLitellmModelPrefix(mapped.id) } : {}),
+					};
 				},
 			}),
 	};

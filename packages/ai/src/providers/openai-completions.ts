@@ -890,7 +890,7 @@ function buildParams(
 ): { params: OpenAICompletionsParams; toolStrictMode: AppliedToolStrictMode } {
 	const compat = getCompat(model, resolvedBaseUrl);
 	const messages = convertMessages(model, context, compat);
-	maybeAddOpenRouterAnthropicCacheControl(model, messages);
+	maybeAddAnthropicCacheControl(model, messages);
 	const supportsReasoningParams = model.provider !== "github-copilot";
 
 	// Kimi (including via OpenRouter) calculates TPM rate limits based on max_tokens, not actual output.
@@ -1097,18 +1097,34 @@ function mapReasoningEffort(
 	return reasoningEffortMap[effort] ?? effort;
 }
 
-function maybeAddOpenRouterAnthropicCacheControl(
+/**
+ * Detect whether the model is an Anthropic model accessed via a provider that
+ * supports Anthropic-style `cache_control` breakpoints (OpenRouter or any
+ * proxy routing to Anthropic/Bedrock via OpenAI-compatible format).
+ */
+function isAnthropicModelViaCacheableProvider(model: Model<"openai-completions">): boolean {
+	// OpenRouter with explicit anthropic/ prefix
+	if (model.provider === "openrouter" && model.id.startsWith("anthropic/")) return true;
+	// Safety net for proxies routing Claude via OpenAI-compat format.
+	// LiteLLM Claude models are natively routed to anthropic-messages and
+	// no longer reach this code path — they get full applyPromptCaching() instead.
+	if (model.id.toLowerCase().includes("claude")) return true;
+	return false;
+}
+
+/**
+ * Add Anthropic prompt-cache breakpoints to the message array. Mirrors the
+ * strategy used by opencode's `applyCaching()`:
+ *   - Up to 2 breakpoints on system/developer messages (stable prefix → high hit rate)
+ *   - Up to 2 breakpoints on the last user/assistant messages (conversation edge)
+ */
+function maybeAddAnthropicCacheControl(
 	model: Model<"openai-completions">,
 	messages: ChatCompletionMessageParam[],
 ): void {
-	if (model.provider !== "openrouter" || !model.id.startsWith("anthropic/")) return;
+	if (!isAnthropicModelViaCacheableProvider(model)) return;
 
-	// Anthropic-style caching requires cache_control on a text part. Add a breakpoint
-	// on the last user/assistant message (walking backwards until we find text content).
-	for (let i = messages.length - 1; i >= 0; i--) {
-		const msg = messages[i];
-		if (msg.role !== "user" && msg.role !== "assistant" && msg.role !== "developer") continue;
-
+	const addCacheControl = (msg: ChatCompletionMessageParam): void => {
 		const content = msg.content;
 		if (typeof content === "string") {
 			msg.content = [
@@ -1116,16 +1132,34 @@ function maybeAddOpenRouterAnthropicCacheControl(
 			];
 			return;
 		}
-
-		if (!Array.isArray(content)) continue;
-
-		// Find last text part and add cache_control
+		if (!Array.isArray(content)) return;
+		// Find last text part and tag it
 		for (let j = content.length - 1; j >= 0; j--) {
 			const part = content[j];
 			if (part?.type === "text") {
 				Object.assign(part, { cache_control: { type: "ephemeral" } });
 				return;
 			}
+		}
+	};
+
+	// Mark system/developer messages (stable prefix — high cache hit rate)
+	let systemCount = 0;
+	for (const msg of messages) {
+		if (msg.role === "system" || msg.role === "developer") {
+			addCacheControl(msg);
+			systemCount++;
+			if (systemCount >= 2) break;
+		}
+	}
+
+	// Mark last 2 non-system messages (conversation edge — enables turn-level caching)
+	let marked = 0;
+	for (let i = messages.length - 1; i >= 0 && marked < 2; i--) {
+		const msg = messages[i];
+		if (msg.role === "user" || msg.role === "assistant") {
+			addCacheControl(msg);
+			marked++;
 		}
 	}
 }
