@@ -26,6 +26,7 @@ import type {
 	StopReason,
 	StreamFunction,
 	StreamOptions,
+	StructuredSystemPrompt,
 	TextContent,
 	ThinkingContent,
 	Tool,
@@ -1420,6 +1421,7 @@ type SystemBlockOptions = {
 export function buildAnthropicSystemBlocks(
 	systemPrompt: string | undefined,
 	options: SystemBlockOptions = {},
+	structuredPrompt?: StructuredSystemPrompt,
 ): AnthropicSystemBlock[] | undefined {
 	const { includeClaudeCodeInstruction = false, extraInstructions = [], billingPayload, cacheControl } = options;
 	const blocks: AnthropicSystemBlock[] = [];
@@ -1449,7 +1451,23 @@ export function buildAnthropicSystemBlocks(
 		});
 	}
 
-	if (systemPrompt) {
+	// If structured prompt blocks are provided, emit them as separate system blocks
+	// so that the "stable" prefix block can be cached across subagent sessions.
+	// Each emitted block carries its cacheHint so applyPromptCaching can find
+	// the stable block directly without fragile index arithmetic.
+	if (structuredPrompt && structuredPrompt.blocks.length > 0) {
+		for (const block of structuredPrompt.blocks) {
+			const text = block.text.toWellFormed();
+			if (text) {
+				blocks.push({
+					type: "text",
+					text,
+					...(cacheControl ? { cache_control: cacheControl } : {}),
+					...(block.cacheHint ? { _cacheHint: block.cacheHint } : {}),
+				});
+			}
+		}
+	} else if (systemPrompt) {
 		blocks.push({
 			type: "text",
 			text: sanitizedPrompt,
@@ -1642,7 +1660,26 @@ export function applyPromptCaching(params: MessageCreateParamsStreaming, cacheCo
 	if (cacheBreakpointsUsed >= MAX_CACHE_BREAKPOINTS) return;
 
 	if (params.system && Array.isArray(params.system) && params.system.length > 0) {
-		applyCacheControlToLastBlock(params.system, cacheControl);
+		// When structured prompt blocks carry _cacheHint tags (set by
+		// buildAnthropicSystemBlocks), place the cache breakpoint on the last
+		// "stable" block — the shared prefix across subagent sessions.
+		// This is robust against empty-text block filtering.
+		const systemBlocks = params.system as Array<AnthropicSystemBlock & CacheControlBlock & { _cacheHint?: string }>;
+		let stableBlockPlaced = false;
+
+		// Walk system blocks in reverse to find the last one tagged "stable".
+		for (let i = systemBlocks.length - 1; i >= 0; i--) {
+			if (systemBlocks[i]._cacheHint === "stable") {
+				systemBlocks[i].cache_control = cacheControl;
+				stableBlockPlaced = true;
+				break;
+			}
+		}
+
+		// Fallback: no stable block found, cache the last system block as before.
+		if (!stableBlockPlaced) {
+			applyCacheControlToLastBlock(params.system, cacheControl);
+		}
 		cacheBreakpointsUsed++;
 	}
 
@@ -1904,10 +1941,15 @@ function buildParams(
 				...(context.systemPrompt ? { system: context.systemPrompt.toWellFormed() } : {}),
 			}
 		: undefined;
-	const systemBlocks = buildAnthropicSystemBlocks(context.systemPrompt, {
-		includeClaudeCodeInstruction: shouldInjectClaudeCodeInstruction,
-		billingPayload,
-	});
+	const structuredPrompt = context.systemPromptBlocks;
+	const systemBlocks = buildAnthropicSystemBlocks(
+		context.systemPrompt,
+		{
+			includeClaudeCodeInstruction: shouldInjectClaudeCodeInstruction,
+			billingPayload,
+		},
+		structuredPrompt,
+	);
 	if (systemBlocks) {
 		params.system = systemBlocks;
 	}
@@ -1916,6 +1958,15 @@ function buildParams(
 	applyPromptCaching(params, cacheControl);
 	enforceCacheControlLimit(params, 4);
 	normalizeCacheControlTtlOrdering(params);
+
+	// Strip internal _cacheHint tags before sending to the API.
+	if (params.system) {
+		for (const block of params.system) {
+			if (typeof block === "object" && "_cacheHint" in block) {
+				delete (block as Record<string, unknown>)._cacheHint;
+			}
+		}
+	}
 
 	return params;
 }

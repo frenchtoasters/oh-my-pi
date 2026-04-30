@@ -336,6 +336,7 @@ async function streamAssistantResponse(
 	// Build LLM context
 	const llmContext: Context = {
 		systemPrompt: context.systemPrompt,
+		systemPromptBlocks: context.systemPromptBlocks,
 		messages: normalizedMessages,
 		tools: normalizeTools(context.tools, !!config.intentTracing),
 	};

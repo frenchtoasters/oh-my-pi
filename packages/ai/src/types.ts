@@ -501,8 +501,54 @@ export interface Tool<TParameters extends TSchema = TSchema> {
 	customWireName?: string;
 }
 
+/**
+ * A single block of a structured system prompt, used to enable cross-session
+ * prompt caching. Blocks marked `cacheHint: "stable"` are expected to be
+ * byte-identical across sessions, allowing the provider to place a cache
+ * breakpoint after the stable prefix.
+ */
+export interface SystemPromptBlock {
+	text: string;
+	/**
+	 * `"stable"` — content is identical across subagent sessions (good cache target).
+	 * `"dynamic"` — content varies per session (agent-specific instructions, etc.).
+	 * Absent — treated as dynamic.
+	 */
+	cacheHint?: "stable" | "dynamic";
+}
+
+/**
+ * A system prompt split into structured blocks for cache-aware providers.
+ * When present on {@link Context.systemPromptBlocks}, providers that support
+ * prompt caching (e.g. Anthropic) can emit separate system blocks and place
+ * cache breakpoints optimally. Providers that don't support structured prompts
+ * use {@link Context.systemPrompt} (the flattened string) instead.
+ */
+export interface StructuredSystemPrompt {
+	blocks: SystemPromptBlock[];
+}
+
+/**
+ * Flatten a {@link StructuredSystemPrompt} into a single string by
+ * concatenating all block texts. Use this when a provider needs the full
+ * system prompt as a plain string.
+ *
+ * Blocks are joined with no separator — callers that construct blocks from
+ * independent strings must include any needed whitespace at block boundaries.
+ */
+export function flattenSystemPrompt(structured: StructuredSystemPrompt): string {
+	return structured.blocks.map(b => b.text).join("");
+}
+
 export interface Context {
 	systemPrompt?: string;
+	/**
+	 * Optional structured system prompt blocks for cache-aware providers.
+	 * When set, providers like Anthropic can emit separate system blocks with
+	 * optimal cache breakpoint placement. The `systemPrompt` field must still
+	 * contain the full flattened string for providers that don't use this.
+	 */
+	systemPromptBlocks?: StructuredSystemPrompt;
 	messages: Message[];
 	tools?: Tool[];
 }

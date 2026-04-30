@@ -954,6 +954,10 @@ export async function runSubprocess(options: ExecutorOptions): Promise<SingleRes
 
 			const { normalized: normalizedOutputSchema } = normalizeSchema(outputSchema);
 
+			// Capture the stable prefix (defaultPrompt) from the systemPrompt callback
+			// so we can create structured blocks for cache-aligned prompt splitting.
+			let capturedStablePrefix: string | undefined;
+
 			const { session } = await createAgentSession({
 				cwd: worktree ?? cwd,
 				authStorage,
@@ -967,8 +971,9 @@ export async function runSubprocess(options: ExecutorOptions): Promise<SingleRes
 				contextFiles: options.contextFiles,
 				skills: options.skills,
 				promptTemplates: options.promptTemplates,
-				systemPrompt: defaultPrompt =>
-					prompt.render(subagentSystemPromptTemplate, {
+				systemPrompt: defaultPrompt => {
+					capturedStablePrefix = defaultPrompt;
+					return prompt.render(subagentSystemPromptTemplate, {
 						base: defaultPrompt,
 						agent: agent.systemPrompt,
 						worktree: worktree ?? "",
@@ -976,7 +981,8 @@ export async function runSubprocess(options: ExecutorOptions): Promise<SingleRes
 						contextFile: options.contextFile,
 						ircPeers: ircEnabled ? renderIrcPeerRoster(id) : "",
 						ircSelfId: ircEnabled ? id : "",
-					}),
+					});
+				},
 				sessionManager,
 				hasUI: false,
 				spawns: spawnsEnv,
@@ -1013,6 +1019,26 @@ export async function runSubprocess(options: ExecutorOptions): Promise<SingleRes
 			const filteredSubagentTools = subagentToolNames.filter(name => !parentOwnedToolNames.has(name));
 			if (filteredSubagentTools.length !== subagentToolNames.length) {
 				await session.setActiveToolsByName(filteredSubagentTools);
+			}
+
+			// Set structured prompt blocks for cache-aligned splitting.
+			// The stable prefix (defaultPrompt / {{base}}) is identical across same-class
+			// subagents, enabling Anthropic's server-side KV cache reuse.
+			if (capturedStablePrefix) {
+				const fullPrompt = session.agent.state.systemPrompt;
+				if (fullPrompt.startsWith(capturedStablePrefix)) {
+					const dynamicSuffix = fullPrompt.slice(capturedStablePrefix.length);
+					session.agent.setSystemPromptBlocks({
+						blocks: [
+							{ text: capturedStablePrefix, cacheHint: "stable" },
+							{ text: dynamicSuffix, cacheHint: "dynamic" },
+						],
+					});
+				} else {
+					logger.warn(
+						"Subagent system prompt does not start with captured stable prefix — cache optimization disabled",
+					);
+				}
 			}
 
 			session.sessionManager.appendSessionInit({
