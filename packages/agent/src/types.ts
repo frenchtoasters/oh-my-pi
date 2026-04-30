@@ -7,6 +7,7 @@ import type {
 	Message,
 	Model,
 	SimpleStreamOptions,
+	StructuredSystemPrompt,
 	streamSimple,
 	TextContent,
 	Tool,
@@ -81,7 +82,7 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	 * }
 	 * ```
 	 */
-	transformContext?: (messages: AgentMessage[], signal?: AbortSignal) => Promise<AgentMessage[]>;
+	transformContext?: (messages: AgentMessage[], signal?: AbortSignal) => AgentMessage[] | Promise<AgentMessage[]>;
 
 	/**
 	 * Resolves an API key dynamically for each LLM call.
@@ -288,6 +289,8 @@ export interface AgentTool<TParameters extends TSchema = TSchema, TDetails = any
 // AgentContext is like Context but uses AgentTool
 export interface AgentContext {
 	systemPrompt: string[];
+	/** Optional structured prompt blocks for cache-aware providers. */
+	systemPromptBlocks?: StructuredSystemPrompt;
 	messages: AgentMessage[];
 	tools?: AgentTool<any>[];
 }

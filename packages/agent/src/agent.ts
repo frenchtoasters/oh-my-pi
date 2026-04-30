@@ -14,6 +14,7 @@ import {
 	type ProviderSessionState,
 	type ServiceTier,
 	type SimpleStreamOptions,
+	type StructuredSystemPrompt,
 	streamSimple,
 	type TextContent,
 	type ThinkingBudgets,
@@ -79,7 +80,7 @@ export interface AgentOptions {
 	 * Optional transform applied to context before convertToLlm.
 	 * Use for context pruning, injecting external context, etc.
 	 */
-	transformContext?: (messages: AgentMessage[], signal?: AbortSignal) => Promise<AgentMessage[]>;
+	transformContext?: (messages: AgentMessage[], signal?: AbortSignal) => AgentMessage[] | Promise<AgentMessage[]>;
 
 	/**
 	 * Steering mode: "all" = send all steering messages at once, "one-at-a-time" = one per turn
@@ -220,7 +221,7 @@ export class Agent {
 	#listeners = new Set<(e: AgentEvent) => void>();
 	#abortController?: AbortController;
 	#convertToLlm: (messages: AgentMessage[]) => Message[] | Promise<Message[]>;
-	#transformContext?: (messages: AgentMessage[], signal?: AbortSignal) => Promise<AgentMessage[]>;
+	#transformContext?: (messages: AgentMessage[], signal?: AbortSignal) => AgentMessage[] | Promise<AgentMessage[]>;
 	#steeringQueue: AgentMessage[] = [];
 	#followUpQueue: AgentMessage[] = [];
 	#steeringMode: "all" | "one-at-a-time";
@@ -246,6 +247,7 @@ export class Agent {
 	#preferWebsockets?: boolean;
 	#transformToolCallArguments?: (args: Record<string, unknown>, toolName: string) => Record<string, unknown>;
 	#intentTracing: boolean;
+	#systemPromptBlocks?: StructuredSystemPrompt;
 	#getToolChoice?: () => ToolChoice | undefined;
 	#onPayload?: SimpleStreamOptions["onPayload"];
 	#onResponse?: SimpleStreamOptions["onResponse"];
@@ -414,6 +416,16 @@ export class Agent {
 		return this.#state;
 	}
 
+	/**
+	 * Replace the context transform applied before each LLM call.
+	 * Used by AgentSession to compose DCP transforms after construction.
+	 */
+	set transformContext(value:
+		| ((messages: AgentMessage[], signal?: AbortSignal) => AgentMessage[] | Promise<AgentMessage[]>)
+		| undefined) {
+		this.#transformContext = value;
+	}
+
 	subscribe(fn: (e: AgentEvent) => void): () => void {
 		this.#listeners.add(fn);
 		return () => this.#listeners.delete(fn);
@@ -455,6 +467,10 @@ export class Agent {
 	// State mutators
 	setSystemPrompt(v: string[]) {
 		this.#state.systemPrompt = v;
+	}
+
+	setSystemPromptBlocks(v: StructuredSystemPrompt | undefined) {
+		this.#systemPromptBlocks = v;
 	}
 
 	setModel(m: Model) {
@@ -719,6 +735,7 @@ export class Agent {
 
 		const context: AgentContext = {
 			systemPrompt: this.#state.systemPrompt,
+			systemPromptBlocks: this.#systemPromptBlocks,
 			messages: this.#state.messages.slice(),
 			tools: this.#state.tools,
 		};
@@ -776,6 +793,7 @@ export class Agent {
 					await Bun.sleep(0);
 				}
 				context.systemPrompt = this.#state.systemPrompt;
+				context.systemPromptBlocks = this.#systemPromptBlocks;
 				context.tools = this.#state.tools;
 			},
 			cursorExecHandlers: this.#cursorExecHandlers,
