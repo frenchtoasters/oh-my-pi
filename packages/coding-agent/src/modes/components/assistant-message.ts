@@ -3,7 +3,7 @@ import { Container, Image, ImageProtocol, Markdown, Spacer, TERMINAL, Text } fro
 import { formatNumber } from "@oh-my-pi/pi-utils";
 import { settings } from "../../config/settings";
 import { getMarkdownTheme, theme } from "../../modes/theme/theme";
-import { resolveImageOptions } from "../../tools/render-utils";
+import { resolveImageOptions, stripMessageIdTags } from "../../tools/render-utils";
 
 /**
  * Component that renders a complete assistant message
@@ -104,7 +104,10 @@ export class AssistantMessageComponent extends Container {
 			if (content.type === "text" && content.text.trim()) {
 				// Assistant text messages with no background - trim the text
 				// Set paddingY=0 to avoid extra spacing before tool executions
-				this.#contentContainer.addChild(new Markdown(content.text.trim(), 1, 0, getMarkdownTheme()));
+				// Strip DCP message ID tags that may be echoed by the LLM
+				this.#contentContainer.addChild(
+					new Markdown(stripMessageIdTags(content.text.trim()), 1, 0, getMarkdownTheme()),
+				);
 			} else if (content.type === "thinking" && content.thinking.trim()) {
 				// Add spacing only when another visible assistant content block follows.
 				// This avoids a superfluous blank line before separately-rendered tool execution blocks.

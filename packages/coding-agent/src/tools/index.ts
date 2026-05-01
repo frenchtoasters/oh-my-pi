@@ -13,6 +13,7 @@ import { LspTool } from "../lsp";
 import type { DiscoverableMCPSearchIndex, DiscoverableMCPTool } from "../mcp/discoverable-tool-metadata";
 import type { PlanModeState } from "../plan-mode/state";
 import type { AgentRegistry } from "../registry/agent-registry";
+import type { DCPState } from "../session/compaction/dcp-state";
 import type { CustomMessage } from "../session/messages";
 import type { ToolChoiceQueue } from "../session/tool-choice-queue";
 import { TaskTool } from "../task";
@@ -26,6 +27,7 @@ import { BashTool } from "./bash";
 import { BrowserTool } from "./browser";
 import { CalculatorTool } from "./calculator";
 import { type CheckpointState, CheckpointTool, RewindTool } from "./checkpoint";
+import { createCompressTool } from "./compress";
 import { DebugTool } from "./debug";
 import { EvalTool } from "./eval";
 import { ExitPlanModeTool } from "./exit-plan-mode";
@@ -200,6 +202,8 @@ export interface ToolSession {
 	steer?(message: { customType: string; content: string; details?: unknown }): void;
 	/** Peek the currently in-flight tool-choice queue directive's invocation handler. Used by the `resolve` tool to dispatch to the pending action. */
 	peekQueueInvoker?(): ((input: unknown) => Promise<unknown> | unknown) | undefined;
+	/** Get DCP state if compaction is active. */
+	getDCPState?: () => DCPState | undefined;
 	/** Get active checkpoint state if any. */
 	getCheckpointState?: () => CheckpointState | undefined;
 	/** Set or clear active checkpoint state. */
@@ -243,6 +247,7 @@ export const BUILTIN_TOOLS: Record<string, ToolFactory> = {
 	retain: HindsightRetainTool.createIf,
 	recall: HindsightRecallTool.createIf,
 	reflect: HindsightReflectTool.createIf,
+	compress: s => createCompressTool(() => s.getDCPState?.()),
 };
 
 export const HIDDEN_TOOLS: Record<string, ToolFactory> = {
@@ -401,10 +406,10 @@ export async function createTools(session: ToolSession, toolNames?: string[]): P
 		filteredRequestedTools !== undefined
 			? filteredRequestedTools.filter(name => name !== "resolve").map(name => [name, allTools[name]] as const)
 			: [
-					...Object.entries(BUILTIN_TOOLS).filter(([name]) => isToolAllowed(name)),
-					...(includeYield ? ([["yield", HIDDEN_TOOLS.yield]] as const) : []),
-					...([["exit_plan_mode", HIDDEN_TOOLS.exit_plan_mode]] as const),
-				];
+				...Object.entries(BUILTIN_TOOLS).filter(([name]) => isToolAllowed(name)),
+				...(includeYield ? ([["yield", HIDDEN_TOOLS.yield]] as const) : []),
+				...([["exit_plan_mode", HIDDEN_TOOLS.exit_plan_mode]] as const),
+			];
 
 	const baseResults = await Promise.all(
 		baseEntries.map(async ([name, factory]) => {

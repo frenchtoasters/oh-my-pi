@@ -1368,6 +1368,152 @@ export const SETTINGS_SCHEMA = {
 	},
 
 	// ────────────────────────────────────────────────────────────────────────
+	// Dynamic Context Pruning (DCP)
+	// ────────────────────────────────────────────────────────────────────────
+
+	"dcp.enabled": {
+		type: "boolean",
+		default: true,
+		ui: {
+			tab: "context",
+			label: "Dynamic Context Pruning",
+			description: "Enable automatic context pruning strategies (dedup, error purge, write supersede)",
+		},
+	},
+
+	"dcp.strategies.deduplication.enabled": {
+		type: "boolean",
+		default: true,
+		ui: {
+			tab: "context",
+			label: "Deduplication",
+			description: "Remove duplicate tool calls, keeping only the most recent",
+			submenu: true,
+		},
+	},
+
+	"dcp.strategies.purgeErrors.enabled": {
+		type: "boolean",
+		default: true,
+		ui: {
+			tab: "context",
+			label: "Purge Error Inputs",
+			description: "Remove inputs of old errored tool calls",
+			submenu: true,
+		},
+	},
+
+	"dcp.strategies.purgeErrors.turnThreshold": {
+		type: "number",
+		default: 4,
+		ui: {
+			tab: "context",
+			label: "Error Age Threshold",
+			description: "Number of turns before errored tool inputs are pruned",
+			submenu: true,
+		},
+	},
+
+	"dcp.strategies.supersedeWrites.enabled": {
+		type: "boolean",
+		default: true,
+		ui: {
+			tab: "context",
+			label: "Supersede Writes",
+			description: "Prune write/edit inputs when file has been subsequently read",
+			submenu: true,
+		},
+	},
+
+	"dcp.nudge.enabled": {
+		type: "boolean",
+		default: true,
+		ui: {
+			tab: "context",
+			label: "Context Nudges",
+			description: "Inject reminders for the LLM to compress when context grows large",
+			submenu: true,
+		},
+	},
+
+	"dcp.nudge.maxContextLimit": {
+		type: "number",
+		default: 100_000,
+		ui: {
+			tab: "context",
+			label: "Critical Context Limit",
+			description: "Token count triggering urgent compress nudge",
+			submenu: true,
+		},
+	},
+
+	"dcp.nudge.minContextLimit": {
+		type: "number",
+		default: 50_000,
+		ui: {
+			tab: "context",
+			label: "Nudge Context Threshold",
+			description: "Token count above which gentle nudges begin",
+			submenu: true,
+		},
+	},
+
+	"dcp.nudge.frequency": {
+		type: "number",
+		default: 5,
+		ui: {
+			tab: "context",
+			label: "Nudge Frequency",
+			description: "Inject nudge every N transform calls",
+			submenu: true,
+		},
+	},
+
+	"dcp.nudge.iterationThreshold": {
+		type: "number",
+		default: 15,
+		ui: {
+			tab: "context",
+			label: "Iteration Nudge Threshold",
+			description: "Messages since last user message before iteration nudge triggers",
+			submenu: true,
+		},
+	},
+
+	"dcp.turnProtection.turns": {
+		type: "number",
+		default: 2,
+		ui: {
+			tab: "context",
+			label: "Turn Protection",
+			description: "Number of recent turns immune from pruning",
+			submenu: true,
+		},
+	},
+
+	"dcp.protectedTools": {
+		type: "array",
+		default: ["task", "skill", "todowrite", "todoread", "compress", "write", "edit", "read"],
+		ui: {
+			tab: "context",
+			label: "Protected Tools",
+			description: "Tool names that are never pruned by DCP",
+			submenu: true,
+		},
+	},
+
+	"dcp.protectedFilePatterns": {
+		type: "array",
+		default: [] as string[],
+		ui: {
+			tab: "context",
+			label: "Protected File Patterns",
+			description: "Glob patterns for files whose tool calls are never pruned",
+			submenu: true,
+		},
+	},
+
+	// ────────────────────────────────────────────────────────────────────────
 	// Editing
 	// ────────────────────────────────────────────────────────────────────────
 
