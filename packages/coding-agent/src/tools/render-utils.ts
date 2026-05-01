@@ -17,6 +17,7 @@ import { formatDimensionNote, type ResizedImage } from "../utils/image-resize";
 
 export { Ellipsis } from "@oh-my-pi/pi-natives";
 export { replaceTabs, truncateToWidth, wrapTextWithAnsi } from "@oh-my-pi/pi-tui";
+export { stripMessageIdTags } from "../session/compaction/message-ids";
 
 // =============================================================================
 // Standardized Display Constants

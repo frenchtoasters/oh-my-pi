@@ -17,7 +17,7 @@ import { theme } from "../../modes/theme/theme";
 import type { CompactionQueuedMessage, InteractiveModeContext } from "../../modes/types";
 import { type CustomMessage, SKILL_PROMPT_MESSAGE_TYPE, type SkillPromptDetails } from "../../session/messages";
 import type { SessionContext } from "../../session/session-manager";
-import { formatBytes, formatDuration } from "../../tools/render-utils";
+import { formatBytes, formatDuration, stripMessageIdTags } from "../../tools/render-utils";
 
 type TextBlock = { type: "text"; text: string };
 
@@ -36,7 +36,7 @@ export class UiHelpers {
 			typeof message.content === "string"
 				? [{ type: "text", text: message.content }]
 				: message.content.filter((content): content is TextBlock => content.type === "text");
-		return textBlocks.map(block => block.text).join("");
+		return stripMessageIdTags(textBlocks.map(block => block.text).join(""));
 	}
 
 	/**

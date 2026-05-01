@@ -16,6 +16,7 @@ import {
 	formatMoreItems,
 	formatStatusIcon,
 	replaceTabs,
+	stripMessageIdTags,
 	truncateToWidth,
 } from "../tools/render-utils";
 import {
@@ -269,7 +270,7 @@ function renderOutputSection(
 	warning?: string,
 ): string[] {
 	const lines: string[] = [];
-	const trimmedOutput = output.trimEnd();
+	const trimmedOutput = stripMessageIdTags(output).trimEnd();
 	if (!trimmedOutput && !warning) return lines;
 
 	if (warning) {
@@ -309,7 +310,7 @@ function renderOutputSection(
 			}
 		}
 
-		const outputLines = output.trimEnd().split("\n");
+		const outputLines = trimmedOutput.split("\n");
 		const previewCount = expanded ? maxExpanded : maxCollapsed;
 		for (const line of outputLines.slice(0, previewCount)) {
 			lines.push(`${continuePrefix}  ${theme.fg("dim", truncateToWidth(replaceTabs(line), 70))}`);
@@ -374,7 +375,7 @@ function renderTaskSection(
 	maxExpanded = 20,
 ): string[] {
 	const lines: string[] = [];
-	const trimmed = task.trim();
+	const trimmed = stripMessageIdTags(task).trim();
 	if (!expanded || !trimmed) return lines;
 
 	lines.push(`${continuePrefix}${theme.fg("dim", "Task")}`);
@@ -521,7 +522,7 @@ function renderAgentProgress(
 
 	if (progress.status === "running") {
 		if (!description) {
-			const taskPreview = truncateToWidth(progress.assignment ?? progress.task, 40);
+			const taskPreview = truncateToWidth(stripMessageIdTags(progress.assignment ?? progress.task), 40);
 			statusLine += ` ${theme.fg("muted", taskPreview)}`;
 		}
 		if (progress.toolCount > 0) {
@@ -654,7 +655,7 @@ function renderReviewResult(
 	if (summary.explanation) {
 		if (expanded) {
 			lines.push(`${continuePrefix}${theme.fg("dim", "Summary")}`);
-			const explanationLines = summary.explanation.split("\n");
+			const explanationLines = stripMessageIdTags(summary.explanation).split("\n");
 			for (const line of explanationLines) {
 				lines.push(`${continuePrefix}  ${theme.fg("dim", replaceTabs(line))}`);
 			}

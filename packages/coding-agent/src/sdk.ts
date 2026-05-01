@@ -1035,6 +1035,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			authStorage,
 			modelRegistry,
 			asyncJobManager,
+			getDCPState: () => session?.getDCPState(),
 		};
 
 		// Initialize internal URL router for internal protocols (agent://, artifact://, memory://, skill://, rule://, mcp://, local://)
