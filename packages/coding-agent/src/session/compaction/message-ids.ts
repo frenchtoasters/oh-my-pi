@@ -82,3 +82,48 @@ function prependTagToContent(content: unknown, tag: string): unknown[] {
 export function stripMessageIdTags(text: string): string {
 	return text.replace(/<dcp-message-id>m\d+<\/dcp-message-id>\n?/g, "");
 }
+
+/**
+ * Computes a stable content-based fingerprint for a message.
+ * Used by compression blocks to identify messages across index shifts.
+ *
+ * - assistant with toolCalls: sorted toolCall IDs (stable, unique per session)
+ * - assistant text-only: hash of text content + timestamp
+ * - toolResult: toolCallId (guaranteed unique per session)
+ * - user/developer: hash of content string + timestamp
+ * - other roles: hash of role + timestamp
+ */
+export function computeMessageFingerprint(msg: AgentMessage): string {
+	if (msg.role === "assistant") {
+		const toolCallIds: string[] = [];
+		for (const block of msg.content) {
+			if (typeof block === "object" && "type" in block && block.type === "toolCall" && "id" in block) {
+				toolCallIds.push(block.id as string);
+			}
+		}
+		if (toolCallIds.length > 0) {
+			return `assistant:${toolCallIds.sort().join(",")}`;
+		}
+		// Text-only assistant message
+		const textContent = msg.content
+			.filter((b): b is { type: "text"; text: string } => typeof b === "object" && "type" in b && b.type === "text")
+			.map(b => b.text)
+			.join("");
+		const ts = "timestamp" in msg ? String(msg.timestamp) : "";
+		return `assistant:text:${Bun.hash(textContent + ts).toString(16)}`;
+	}
+
+	if (msg.role === "toolResult") {
+		return `toolResult:${msg.toolCallId}`;
+	}
+
+	const ts = "timestamp" in msg ? String(msg.timestamp) : "";
+
+	if (msg.role === "user" || msg.role === "developer") {
+		const contentStr = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content);
+		return `${msg.role}:${Bun.hash(contentStr + ts).toString(16)}`;
+	}
+
+	// Fallback for custom roles
+	return `${msg.role}:${Bun.hash(String(ts)).toString(16)}`;
+}

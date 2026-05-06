@@ -1,5 +1,6 @@
 import type { AgentMessage } from "@oh-my-pi/pi-agent-core";
 import type { CompressionBlock, DCPState } from "./dcp-state";
+import { computeMessageFingerprint } from "./message-ids";
 
 export interface CreateBlockParams {
 	mode: "range" | "message";
@@ -8,6 +9,7 @@ export interface CreateBlockParams {
 	endId: string;
 	summary: string;
 	messageIdMap: Map<number, string>;
+	messages?: AgentMessage[];
 }
 
 function getEffectiveMessageIds(startId: string, endId: string, messageIdMap: Map<number, string>): string[] {
@@ -36,17 +38,39 @@ export function createBlock(state: DCPState, params: CreateBlockParams): Compres
 		consumedBlockIds: [],
 		parentBlockIds: [],
 		effectiveMessageIds,
+		effectiveFingerprints: [],
 		effectiveToolIds: [],
 		deactivatedByUser: false,
 		createdAt: Date.now(),
 	};
 
+	// Compute stable fingerprints for the messages in the effective range
+	const effectiveFingerprints: string[] = [];
+	if (params.messages && params.messages.length > 0) {
+		// Build reverse map: id -> index
+		const idToIdx = new Map<string, number>();
+		for (const [idx, id] of params.messageIdMap.entries()) {
+			idToIdx.set(id, idx);
+		}
+		for (const msgId of effectiveMessageIds) {
+			const idx = idToIdx.get(msgId);
+			if (idx !== undefined && idx < params.messages.length) {
+				effectiveFingerprints.push(computeMessageFingerprint(params.messages[idx]));
+			}
+		}
+	}
+	newBlock.effectiveFingerprints = effectiveFingerprints;
+
 	// Find overlapping blocks to consume
 	const effectiveSet = new Set(effectiveMessageIds);
+	const effectiveFpSet = new Set(effectiveFingerprints);
 	for (const [id, block] of state.compressionBlocks) {
 		if (!block.active) continue;
 
-		const overlaps = block.effectiveMessageIds.some(msgId => effectiveSet.has(msgId));
+		const overlaps =
+			block.effectiveFingerprints?.length > 0
+				? block.effectiveFingerprints.some(fp => effectiveFpSet.has(fp))
+				: block.effectiveMessageIds.some(msgId => effectiveSet.has(msgId));
 		if (overlaps) {
 			newBlock.consumedBlockIds.push(id);
 			newBlock.includedBlockIds.push(id);
@@ -126,13 +150,35 @@ export function filterCompressedRanges(
 		}
 	}
 
+	// Build fingerprint -> index map for stable matching across index shifts
+	const fpToIndex = new Map<string, number>();
+	for (const [idx, _id] of messageIdMap.entries()) {
+		if (idx < messages.length) {
+			const fp = computeMessageFingerprint(messages[idx]);
+			fpToIndex.set(fp, idx);
+		}
+	}
+
 	for (const block of activeBlocks) {
 		const indicesInRange: number[] = [];
-		for (const msgId of block.effectiveMessageIds) {
-			const idx = idToIndex.get(msgId);
-			if (idx !== undefined) {
-				indicesInRange.push(idx);
-				removalIndices.add(idx);
+
+		if (block.effectiveFingerprints?.length > 0) {
+			// Fingerprint-based matching (stable across index shifts)
+			for (const fp of block.effectiveFingerprints) {
+				const idx = fpToIndex.get(fp);
+				if (idx !== undefined) {
+					indicesInRange.push(idx);
+					removalIndices.add(idx);
+				}
+			}
+		} else {
+			// Fallback: mNNNN ID matching (legacy blocks without fingerprints)
+			for (const msgId of block.effectiveMessageIds) {
+				const idx = idToIndex.get(msgId);
+				if (idx !== undefined) {
+					indicesInRange.push(idx);
+					removalIndices.add(idx);
+				}
 			}
 		}
 

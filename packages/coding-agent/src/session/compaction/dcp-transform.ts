@@ -43,17 +43,25 @@ export function createDCPTransform(state: DCPState, config: DCPConfig): Transfor
 			logger.debug("DCP: Supersede writes applied", { prunedCount: before - currentMessages.length });
 		}
 
-		// 5. Filter compressed ranges using the stable (pre-pruning) ID map
+		// 5. Filter compressed ranges using fingerprint-based matching
 		const beforeCompression = currentMessages.length;
 		const preFilterIdMap = assignMessageIds(currentMessages);
+		const preCompressionMessages = currentMessages;
 		currentMessages = filterCompressedRanges(currentMessages, state, preFilterIdMap);
 		logger.debug("DCP: Compression ranges filtered", { prunedCount: beforeCompression - currentMessages.length });
+
+		// Validate tool pairing after compression
+		if (currentMessages !== preCompressionMessages && !validateToolPairing(currentMessages)) {
+			logger.warn("DCP: Compression broke tool pairing, falling back to pre-compression messages");
+			currentMessages = preCompressionMessages;
+		}
 
 		// 6. Re-assign message IDs after filtering (indices changed)
 		const finalIdMap = assignMessageIds(currentMessages);
 
-		// Store the final ID map in state for the compress tool to use
+		// Store the final ID map and messages in state for the compress tool to use
 		state.lastAssignedIdMap = finalIdMap;
+		state.lastTransformMessages = currentMessages;
 
 		// 7. Inject message ID tags into messages
 		currentMessages = injectMessageIdTags(currentMessages, finalIdMap);
@@ -122,4 +130,39 @@ function isUserAssistantBoundary(messages: AgentMessage[]): boolean {
 	// so the last message is never "assistant". Detect the boundary as the
 	// user's new message being the final one (the LLM is about to respond).
 	return last.role === "user";
+}
+
+function validateToolPairing(messages: AgentMessage[]): boolean {
+	const toolCallIds = new Set<string>();
+	const toolResultIds = new Set<string>();
+	let lastAssistantIdx = -1;
+
+	for (let i = 0; i < messages.length; i++) {
+		const msg = messages[i];
+		if (msg.role === "assistant") {
+			lastAssistantIdx = i;
+			for (const block of msg.content) {
+				if (block.type === "toolCall") {
+					toolCallIds.add(block.id);
+				}
+			}
+		} else if (msg.role === "toolResult") {
+			if (!toolCallIds.has(msg.toolCallId)) return false;
+			toolResultIds.add(msg.toolCallId);
+		}
+	}
+
+	// Check all toolCalls have results (except the last assistant's calls — may be in-progress)
+	for (let i = 0; i < messages.length; i++) {
+		const msg = messages[i];
+		if (msg.role === "assistant" && i !== lastAssistantIdx) {
+			for (const block of msg.content) {
+				if (block.type === "toolCall") {
+					if (!toolResultIds.has(block.id)) return false;
+				}
+			}
+		}
+	}
+
+	return true;
 }

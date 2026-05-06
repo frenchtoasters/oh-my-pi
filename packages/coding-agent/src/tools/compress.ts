@@ -94,6 +94,7 @@ export function createCompressTool(
 			}
 
 			// Create compression block using the index->ID map directly
+			const messages = state.lastTransformMessages ?? [];
 			const block = createBlock(state, {
 				mode: "range",
 				topic: args.topic ?? "untitled",
@@ -101,6 +102,7 @@ export function createCompressTool(
 				endId: args.endId,
 				summary: args.summary,
 				messageIdMap,
+				messages,
 			});
 
 			const summaryTokens = countTokens(args.summary);

@@ -1,3 +1,5 @@
+import type { AgentMessage } from "@oh-my-pi/pi-agent-core";
+
 export interface ToolParameterEntry {
 	tool: string;
 	parameters: Record<string, unknown>;
@@ -20,6 +22,7 @@ export interface CompressionBlock {
 	consumedBlockIds: string[];
 	parentBlockIds: string[];
 	effectiveMessageIds: string[];
+	effectiveFingerprints: string[];
 	effectiveToolIds: string[];
 	deactivatedByUser: boolean;
 	createdAt: number;
@@ -37,6 +40,7 @@ export interface DCPState {
 	compressionBlocks: Map<string, CompressionBlock>;
 	messageIdMap: Map<string, string>;
 	lastAssignedIdMap?: Map<number, string>;
+	lastTransformMessages?: AgentMessage[];
 	currentTurn: number;
 	stats: DCPStats;
 	nudgeCallCount: number;
