@@ -134,6 +134,7 @@ export function transformMessages<TApi extends Api>(
 	let pendingAbortedTimestamp: number | undefined;
 	// Track tool call status: whether resolved (has result) or aborted (synthetic result injected, skip later real results)
 	const toolCallStatus = new Map<string, ToolCallStatus>();
+	const knownToolCallIds = new Set<string>();
 
 	const flushPendingToolCalls = (timestamp: number): void => {
 		if (pendingToolCalls.length === 0) return;
@@ -187,6 +188,7 @@ export function transformMessages<TApi extends Api>(
 
 			const assistantMsg = msg as AssistantMessage;
 			const toolCalls = assistantMsg.content.filter(b => b.type === "toolCall") as ToolCall[];
+			for (const tc of toolCalls) knownToolCallIds.add(tc.id);
 
 			if (assistantMsg.stopReason === "error" || assistantMsg.stopReason === "aborted") {
 				// Keep the assistant message with tool calls intact. If real tool results follow, preserve them;
@@ -203,6 +205,9 @@ export function transformMessages<TApi extends Api>(
 
 			result.push(msg);
 		} else if (msg.role === "toolResult") {
+			// Drop orphaned tool results whose tool call was removed (e.g., by compaction)
+			if (!knownToolCallIds.has(msg.toolCallId)) continue;
+
 			if (pendingAbortedToolCalls.has(msg.toolCallId)) {
 				pendingAbortedToolCalls.delete(msg.toolCallId);
 				toolCallStatus.set(msg.toolCallId, ToolCallStatus.Resolved);
