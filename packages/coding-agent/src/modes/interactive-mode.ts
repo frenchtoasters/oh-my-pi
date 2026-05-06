@@ -1036,6 +1036,19 @@ export class InteractiveMode implements InteractiveModeContext {
 			getSessionId: () => this.sessionManager.getSessionId(),
 		});
 		await Bun.write(newLocalPath, planContent);
+		// Persist approved plan to .plans/ for project-level access
+		try {
+			const projectDir = this.sessionManager.getCwd();
+			const plansDir = path.join(projectDir, ".plans");
+			const planFileName = options.finalPlanFilePath.replace(/^local:\/\//, "");
+			const planDestination = path.join(plansDir, planFileName);
+			await Bun.write(planDestination, planContent);
+		} catch (error) {
+			// Log but don't fail — the local:// copy is the primary artifact
+			logger.warn("Failed to persist plan to .plans/ directory", {
+				error: error instanceof Error ? error.message : String(error),
+			});
+		}
 		if (previousTools.length > 0) {
 			await this.session.setActiveToolsByName(previousTools);
 		}
