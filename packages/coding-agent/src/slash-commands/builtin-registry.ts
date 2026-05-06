@@ -21,6 +21,7 @@ import {
 	handleDecompress,
 	handleRecompress,
 } from "../session/compaction/dcp-commands";
+import { countTokensForMessages } from "../session/compaction/tokenizer";
 import { parseMarketplaceInstallArgs, parsePluginScopeArgs } from "./marketplace-install-parser";
 
 function refreshStatusLine(ctx: InteractiveModeContext): void {
@@ -611,7 +612,8 @@ const BUILTIN_SLASH_COMMAND_REGISTRY: ReadonlyArray<BuiltinSlashCommandSpec> = [
 				const result = handleDCPStats(state);
 				runtime.ctx.showStatus(result.message);
 			} else if (subcommand === "context") {
-				const result = handleDCPContext(state, 0);
+				const tokenCount = countTokensForMessages(runtime.ctx.session.messages);
+				const result = handleDCPContext(state, tokenCount);
 				runtime.ctx.showStatus(result.message);
 			} else {
 				runtime.ctx.showStatus("Usage: /dcp <stats|context>");
