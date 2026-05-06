@@ -9,6 +9,7 @@ import type {
 	ProviderPayload,
 	ServiceTier,
 	TextContent,
+	ToolCall,
 	Usage,
 } from "@oh-my-pi/pi-ai";
 import { getTerminalId } from "@oh-my-pi/pi-tui";
@@ -697,6 +698,13 @@ export function buildSessionContext(
 		}
 	}
 
+	// Defensive repair: ensure every tool_use block has a matching tool_result.
+	// Corrupted sessions (e.g. from errored/aborted turns whose placeholder tool
+	// results were not persisted) can contain orphaned tool_use blocks that the API
+	// rejects. Scan for these and inject synthetic error tool_results so the
+	// conversation stays valid.
+	repairOrphanedToolUseBlocks(messages);
+
 	return {
 		messages,
 		thinkingLevel,
@@ -708,6 +716,104 @@ export function buildSessionContext(
 		mode,
 		modeData,
 	};
+}
+
+/**
+ * Scan for assistant messages whose tool_use blocks have no matching
+ * tool_result and inject synthetic error results so the conversation
+ * stays valid for the API. This repairs corrupted sessions where
+ * placeholder tool results from errored/aborted turns were never persisted.
+ *
+ * Mutates `messages` in-place.
+ */
+function repairOrphanedToolUseBlocks(messages: AgentMessage[]): void {
+	for (let i = 0; i < messages.length; i++) {
+		const msg = messages[i];
+		if (msg.role !== "assistant") continue;
+
+		// Collect tool_use IDs from this assistant message.
+		const toolCallIds: string[] = [];
+		for (const block of msg.content) {
+			if (block.type === "toolCall") {
+				toolCallIds.push(block.id);
+			}
+		}
+		if (toolCallIds.length === 0) continue;
+
+		// Collect tool_result IDs from the immediately following messages.
+		// NOTE: This scan assumes tool_results are contiguous after the assistant.
+		// Non-toolResult messages (developer, user) break the scan. Any tool_results
+		// after the break are handled by the second pass (orphan removal) instead.
+		const matchedIds = new Set<string>();
+		let contiguousCount = 0;
+		for (let j = i + 1; j < messages.length; j++) {
+			const next = messages[j];
+			if (next.role === "toolResult") {
+				matchedIds.add(next.toolCallId);
+				contiguousCount++;
+			} else {
+				break;
+			}
+		}
+
+		// Identify orphaned tool_use blocks.
+		const orphanedIds = toolCallIds.filter(id => !matchedIds.has(id));
+		if (orphanedIds.length === 0) continue;
+
+		logger.warn("Repairing orphaned tool_use blocks", {
+			orphanedIds,
+			assistantIndex: i,
+			stopReason: msg.stopReason,
+		});
+
+		// Build synthetic error tool_results and splice them in right after
+		// the last existing tool_result (or after the assistant if none).
+		const insertAt = i + 1 + contiguousCount;
+		const synthetics: AgentMessage[] = orphanedIds.map(id => {
+			const toolCall = msg.content.find((b): b is ToolCall => b.type === "toolCall" && b.id === id);
+			return {
+				role: "toolResult" as const,
+				toolCallId: id,
+				toolName: toolCall?.name ?? "unknown",
+				content: [
+					{
+						type: "text" as const,
+						text: "Tool execution was lost due to a session error. The tool call was not completed.",
+					},
+				],
+				isError: true,
+				timestamp: msg.timestamp,
+			};
+		});
+		messages.splice(insertAt, 0, ...synthetics);
+
+		// Skip past the inserted synthetics so we don't re-scan them.
+		i = insertAt + synthetics.length - 1;
+	}
+	// Second pass: remove orphaned tool_result messages whose assistant was removed
+	// (e.g., by compaction removing the assistant but leaving its tool results).
+	const allKnownToolCallIds = new Set<string>();
+	for (const msg of messages) {
+		if (msg.role !== "assistant") continue;
+		for (const block of msg.content) {
+			if (block.type === "toolCall") {
+				allKnownToolCallIds.add(block.id);
+			}
+		}
+	}
+
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const msg = messages[i];
+		if (msg.role !== "toolResult") continue;
+		if (allKnownToolCallIds.has(msg.toolCallId)) continue;
+
+		logger.warn("Removing orphaned tool_result (no matching tool_use)", {
+			toolCallId: msg.toolCallId,
+			toolName: msg.toolName,
+			index: i,
+		});
+		messages.splice(i, 1);
+	}
 }
 
 /**
