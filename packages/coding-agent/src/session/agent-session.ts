@@ -922,6 +922,7 @@ export class AgentSession {
 		if (event.type === "tool_execution_end" && event.toolName === "yield" && !event.isError) {
 			this.#lastSuccessfulYieldToolCallId = event.toolCallId;
 		}
+
 		if (event.type === "turn_end" && this.#pendingRewindReport) {
 			const report = this.#pendingRewindReport;
 			this.#pendingRewindReport = undefined;
@@ -2966,6 +2967,18 @@ export class AgentSession {
 				: sessionPlanUrl;
 
 		const planExists = fs.existsSync(resolvedPlanPath);
+		const planModeSkills = this.#skills.filter(s => s.planMode);
+		const planModeSkillContents: Array<{ name: string; content: string }> = [];
+		for (const skill of planModeSkills) {
+			try {
+				const skillContent = await Bun.file(skill.filePath).text();
+				// Strip frontmatter (everything between first --- and second ---)
+				const stripped = skillContent.replace(/^---[\s\S]*?---\n*/, "");
+				planModeSkillContents.push({ name: skill.name, content: stripped.trim() });
+			} catch {
+				// Skill file missing or unreadable — skip silently
+			}
+		}
 		const content = prompt.render(planModeActivePrompt, {
 			planFilePath: displayPlanPath,
 			planExists,
@@ -2975,6 +2988,7 @@ export class AgentSession {
 			exitToolName: "exit_plan_mode",
 			reentry: state.reentry ?? false,
 			iterative: state.workflow === "iterative",
+			planModeSkills: planModeSkillContents,
 		});
 
 		return {

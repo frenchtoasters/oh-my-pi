@@ -14,6 +14,7 @@ export interface SkillFrontmatter {
 	description?: string;
 	globs?: string[];
 	alwaysApply?: boolean;
+	planMode?: boolean;
 	[key: string]: unknown;
 }
 
