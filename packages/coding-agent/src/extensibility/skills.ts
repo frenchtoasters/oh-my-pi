@@ -16,6 +16,7 @@ export interface Skill {
 	source: string;
 	/** Source metadata for display */
 	_source?: SourceMeta;
+	planMode?: boolean;
 }
 
 export interface SkillWarning {
@@ -57,6 +58,7 @@ export async function loadSkillsFromDir(options: LoadSkillsFromDirOptions): Prom
 			baseDir: capSkill.path.replace(/[\\/]SKILL\.md$/, ""),
 			source: options.source,
 			_source: capSkill._source,
+			planMode: capSkill.frontmatter?.planMode === true,
 		})),
 		warnings: (result.warnings ?? []).map(message => ({ skillPath: options.dir, message })),
 	};
@@ -171,6 +173,7 @@ export async function loadSkills(options: LoadSkillsOptions = {}): Promise<LoadS
 				baseDir: capSkill.path.replace(/[\\/]SKILL\.md$/, ""),
 				source: `${capSkill._source.provider}:${capSkill.level}`,
 				_source: capSkill._source,
+				planMode: capSkill.frontmatter?.planMode === true,
 			});
 			realPathSet.add(resolvedPath);
 		}
@@ -207,6 +210,7 @@ export async function loadSkills(options: LoadSkillsOptions = {}): Promise<LoadS
 					baseDir: capSkill.path.replace(/[\\/]SKILL\.md$/, ""),
 					source: "custom:user",
 					_source: { ...capSkill._source, providerName: "Custom" },
+					planMode: capSkill.frontmatter?.planMode === true,
 				},
 				path: capSkill.path,
 			});

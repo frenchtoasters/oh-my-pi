@@ -97,6 +97,18 @@ You **MUST** ask questions throughout. You **MUST NOT** make large assumptions a
 - You **MUST** use `{{askToolName}}` only for clarifying requirements or choosing approaches
 </directives>
 
+{{#if planModeSkills.length}}
+
+## Planning Skills
+
+{{#each planModeSkills}}
+### {{name}}
+
+{{content}}
+
+{{/each}}
+{{/if}}
+
 <critical>
 Your turn ends ONLY by:
 1. Using `{{askToolName}}` to gather information, OR
