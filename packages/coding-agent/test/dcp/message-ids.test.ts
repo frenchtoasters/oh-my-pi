@@ -1,6 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import type { AgentMessage } from "@oh-my-pi/pi-agent-core";
-import { assignMessageIds, injectMessageIdTags, stripMessageIdTags } from "../../src/session/compaction/message-ids";
+import {
+	assignMessageIds,
+	computeMessageFingerprint,
+	injectMessageIdTags,
+	stripMessageIdTags,
+} from "../../src/session/compaction/message-ids";
 
 describe("message-ids", () => {
 	it("assigns sequential IDs to standard messages", () => {
@@ -118,5 +123,82 @@ describe("message-ids", () => {
 		const map1 = assignMessageIds(messages);
 		const map2 = assignMessageIds(messages);
 		expect(map1).toEqual(map2);
+	});
+
+	describe("computeMessageFingerprint", () => {
+		it("assistant with toolCalls uses sorted tool call IDs", () => {
+			const msg: AgentMessage = {
+				role: "assistant",
+				content: [
+					{ type: "toolCall", id: "tc_beta", name: "write", arguments: {} },
+					{ type: "toolCall", id: "tc_alpha", name: "read", arguments: {} },
+				],
+			} as any;
+			// IDs are sorted, so tc_alpha comes first
+			expect(computeMessageFingerprint(msg)).toBe("assistant:tc_alpha,tc_beta");
+		});
+
+		it("same assistant message produces same fingerprint across calls", () => {
+			const msg: AgentMessage = {
+				role: "assistant",
+				content: [{ type: "toolCall", id: "tc1", name: "read", arguments: {} }],
+			} as any;
+			const fp1 = computeMessageFingerprint(msg);
+			const fp2 = computeMessageFingerprint(msg);
+			expect(fp1).toBe(fp2);
+		});
+
+		it("different tool call IDs produce different fingerprints", () => {
+			const msg1: AgentMessage = {
+				role: "assistant",
+				content: [{ type: "toolCall", id: "tc1", name: "read", arguments: {} }],
+			} as any;
+			const msg2: AgentMessage = {
+				role: "assistant",
+				content: [{ type: "toolCall", id: "tc2", name: "read", arguments: {} }],
+			} as any;
+			expect(computeMessageFingerprint(msg1)).not.toBe(computeMessageFingerprint(msg2));
+		});
+
+		it("toolResult uses toolCallId directly", () => {
+			const msg: AgentMessage = {
+				role: "toolResult",
+				toolCallId: "tc_unique_42",
+				toolName: "read",
+				content: [{ type: "text", text: "data" }],
+				isError: false,
+			} as any;
+			expect(computeMessageFingerprint(msg)).toBe("toolResult:tc_unique_42");
+		});
+
+		it("text-only assistant uses hash of content and timestamp", () => {
+			const msg: AgentMessage = {
+				role: "assistant",
+				content: [{ type: "text", text: "thinking" }],
+				timestamp: 1000,
+			} as any;
+			const fp = computeMessageFingerprint(msg);
+			expect(fp).toStartWith("assistant:text:");
+			// Deterministic
+			expect(fp).toBe(computeMessageFingerprint(msg));
+		});
+
+		it("user messages with different content produce different fingerprints", () => {
+			const msg1: AgentMessage = { role: "user", content: "hello", timestamp: 1 } as any;
+			const msg2: AgentMessage = { role: "user", content: "world", timestamp: 1 } as any;
+			expect(computeMessageFingerprint(msg1)).not.toBe(computeMessageFingerprint(msg2));
+		});
+
+		it("user messages with different timestamps produce different fingerprints", () => {
+			const msg1: AgentMessage = { role: "user", content: "hello", timestamp: 1 } as any;
+			const msg2: AgentMessage = { role: "user", content: "hello", timestamp: 2 } as any;
+			expect(computeMessageFingerprint(msg1)).not.toBe(computeMessageFingerprint(msg2));
+		});
+
+		it("developer messages are distinct from user messages", () => {
+			const user: AgentMessage = { role: "user", content: "note", timestamp: 1 } as any;
+			const dev: AgentMessage = { role: "developer", content: "note", timestamp: 1 } as any;
+			expect(computeMessageFingerprint(user)).not.toBe(computeMessageFingerprint(dev));
+		});
 	});
 });

@@ -8,6 +8,7 @@ import {
 	reactivateBlock,
 } from "../../src/session/compaction/compression-blocks";
 import { createDCPState } from "../../src/session/compaction/dcp-state";
+import { assignMessageIds } from "../../src/session/compaction/message-ids";
 
 describe("Compression Blocks", () => {
 	it("createBlock generates sequential block IDs", () => {
@@ -536,6 +537,150 @@ describe("Compression Blocks", () => {
 			expect(result[0].role).toBe("user");
 			expect(result[1].role).toBe("developer");
 			expect(result[2].role).toBe("user");
+		});
+	});
+
+	describe("fingerprint-based matching", () => {
+		it("correctly targets messages after dedup shifts indices", () => {
+			const state = createDCPState();
+
+			// Original 7-message array
+			const originalMessages: AgentMessage[] = [
+				{ role: "user", content: "start", timestamp: 1 } as any,
+				{
+					role: "assistant",
+					content: [{ type: "toolCall", id: "dup1", name: "read", arguments: { file: "a.ts" } }],
+				} as any,
+				{
+					role: "toolResult",
+					toolCallId: "dup1",
+					toolName: "read",
+					content: [{ type: "text", text: "file content" }],
+					isError: false,
+				} as any,
+				{
+					role: "assistant",
+					content: [{ type: "toolCall", id: "tc_target", name: "search", arguments: {} }],
+				} as any,
+				{
+					role: "toolResult",
+					toolCallId: "tc_target",
+					toolName: "search",
+					content: [{ type: "text", text: "search results" }],
+					isError: false,
+				} as any,
+				{ role: "user", content: "continue", timestamp: 6 } as any,
+				{ role: "assistant", content: [{ type: "text", text: "sure" }], timestamp: 7 } as any,
+			];
+
+			// Step 1: Assign IDs on the original array
+			const originalIdMap = assignMessageIds(originalMessages);
+			// originalIdMap: 0->m0001, 1->m0002, 2->m0003, 3->m0004, 4->m0005, 5->m0006, 6->m0007
+
+			// Step 2: Create a compression block targeting m0004-m0005 (the search tool call + result)
+			createBlock(state, {
+				mode: "range",
+				topic: "search phase",
+				startId: "m0004",
+				endId: "m0005",
+				summary: "Searched the codebase",
+				messageIdMap: originalIdMap,
+				messages: originalMessages,
+			});
+
+			// Verify the block has fingerprints
+			const block = state.compressionBlocks.get("b1")!;
+			expect(block.effectiveFingerprints.length).toBe(2);
+			expect(block.effectiveFingerprints[0]).toBe("assistant:tc_target");
+			expect(block.effectiveFingerprints[1]).toBe("toolResult:tc_target");
+
+			// Step 3: Simulate dedup removing messages at indices 1 and 2 (the dup1 tool call + result)
+			const postDedupMessages = [
+				originalMessages[0], // user: start
+				originalMessages[3], // assistant: tc_target (was index 3, now index 1)
+				originalMessages[4], // toolResult: tc_target (was index 4, now index 2)
+				originalMessages[5], // user: continue
+				originalMessages[6], // assistant: text "sure"
+			];
+
+			// Step 4: Re-assign IDs on the shifted array
+			const postDedupIdMap = assignMessageIds(postDedupMessages);
+			// postDedupIdMap: 0->m0001, 1->m0002, 2->m0003, 3->m0004, 4->m0005
+			// OLD m0004 is now m0002, OLD m0005 is now m0003
+			// Without fingerprints, the block's stored m0004/m0005 would match the WRONG messages:
+			//   m0004 -> index 3 (user: continue) and m0005 -> index 4 (assistant: "sure")
+
+			// Step 5: Filter compressed ranges
+			const result = filterCompressedRanges(postDedupMessages, state, postDedupIdMap);
+
+			// Step 6: With fingerprints, the correct messages (tc_target assistant + result) are replaced.
+			// Result should be: [user: start, developer: summary, user: continue, assistant: "sure"]
+			expect(result.length).toBe(4);
+			expect(result[0].role).toBe("user"); // "start"
+			expect(result[1].role).toBe("developer"); // summary
+			expect((result[1] as any).content).toContain("Searched the codebase");
+			expect(result[2].role).toBe("user"); // "continue"
+			expect(result[3].role).toBe("assistant"); // text "sure"
+		});
+
+		it("createBlock stores fingerprints that survive index shifts", () => {
+			const state = createDCPState();
+			const messages: AgentMessage[] = [
+				{ role: "user", content: "hello", timestamp: 1 } as any,
+				{ role: "assistant", content: [{ type: "toolCall", id: "tc1", name: "read", arguments: {} }] } as any,
+				{
+					role: "toolResult",
+					toolCallId: "tc1",
+					toolName: "read",
+					content: [{ type: "text", text: "data" }],
+					isError: false,
+				} as any,
+			];
+			const map = assignMessageIds(messages);
+
+			const block = createBlock(state, {
+				mode: "range",
+				topic: "test",
+				startId: "m0002",
+				endId: "m0003",
+				summary: "s",
+				messageIdMap: map,
+				messages,
+			});
+
+			// Fingerprints are tool-call-ID based, not index-based
+			expect(block.effectiveFingerprints).toEqual(["assistant:tc1", "toolResult:tc1"]);
+			// These survive any reindexing because they're content-derived
+		});
+
+		it("falls back to mNNNN matching for blocks without fingerprints", () => {
+			const state = createDCPState();
+			const messages: AgentMessage[] = [
+				{ role: "user", content: "m1", timestamp: 1 } as any,
+				{ role: "user", content: "m2", timestamp: 2 } as any,
+				{ role: "user", content: "m3", timestamp: 3 } as any,
+			];
+			const map = assignMessageIds(messages);
+
+			// Create block WITHOUT passing messages (simulating legacy block)
+			createBlock(state, {
+				mode: "range",
+				topic: "legacy",
+				startId: "m0001",
+				endId: "m0002",
+				summary: "old summary",
+				messageIdMap: map,
+			});
+
+			// Block has empty fingerprints
+			const block = state.compressionBlocks.get("b1")!;
+			expect(block.effectiveFingerprints).toEqual([]);
+
+			// filterCompressedRanges should still work via mNNNN fallback
+			const result = filterCompressedRanges(messages, state, map);
+			expect(result.length).toBe(2); // summary + m3
+			expect(result[0].role).toBe("developer");
+			expect(result[1].role).toBe("user");
 		});
 	});
 });
