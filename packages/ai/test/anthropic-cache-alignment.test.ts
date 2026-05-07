@@ -29,7 +29,7 @@ describe("Subagent cache alignment", () => {
 		it("emits separate system blocks per structured prompt block", () => {
 			const structured = makeStructured(STABLE_PREFIX, DYNAMIC_SUFFIX_A);
 			const fullPrompt = STABLE_PREFIX + DYNAMIC_SUFFIX_A;
-			const blocks = buildAnthropicSystemBlocks(fullPrompt, {}, structured);
+			const blocks = buildAnthropicSystemBlocks([fullPrompt], {}, structured);
 
 			expect(blocks).toBeDefined();
 			// Should contain exactly 2 blocks (no billing header, no claude code instruction)
@@ -41,7 +41,7 @@ describe("Subagent cache alignment", () => {
 		it("tags emitted blocks with _cacheHint from source", () => {
 			const structured = makeStructured(STABLE_PREFIX, DYNAMIC_SUFFIX_A);
 			const fullPrompt = STABLE_PREFIX + DYNAMIC_SUFFIX_A;
-			const blocks = buildAnthropicSystemBlocks(fullPrompt, {}, structured) as TaggedBlock[];
+			const blocks = buildAnthropicSystemBlocks([fullPrompt], {}, structured) as TaggedBlock[];
 
 			expect(blocks).toBeDefined();
 			expect(blocks![0]._cacheHint).toBe("stable");
@@ -52,7 +52,7 @@ describe("Subagent cache alignment", () => {
 			const structured = makeStructured(STABLE_PREFIX, DYNAMIC_SUFFIX_A);
 			const fullPrompt = STABLE_PREFIX + DYNAMIC_SUFFIX_A;
 			const blocks = buildAnthropicSystemBlocks(
-				fullPrompt,
+				[fullPrompt],
 				{
 					includeClaudeCodeInstruction: true,
 				},
@@ -76,7 +76,7 @@ describe("Subagent cache alignment", () => {
 					{ text: "", cacheHint: "dynamic" },
 				],
 			};
-			const blocks = buildAnthropicSystemBlocks(STABLE_PREFIX, {}, structured) as TaggedBlock[];
+			const blocks = buildAnthropicSystemBlocks([STABLE_PREFIX], {}, structured) as TaggedBlock[];
 
 			expect(blocks).toBeDefined();
 			// Empty dynamic block should be skipped
@@ -93,8 +93,8 @@ describe("Subagent cache alignment", () => {
 			const fullPromptA = STABLE_PREFIX + DYNAMIC_SUFFIX_A;
 			const fullPromptB = STABLE_PREFIX + DYNAMIC_SUFFIX_B;
 
-			const blocksA = buildAnthropicSystemBlocks(fullPromptA, {}, structuredA);
-			const blocksB = buildAnthropicSystemBlocks(fullPromptB, {}, structuredB);
+			const blocksA = buildAnthropicSystemBlocks([fullPromptA], {}, structuredA);
+			const blocksB = buildAnthropicSystemBlocks([fullPromptB], {}, structuredB);
 
 			expect(blocksA).toBeDefined();
 			expect(blocksB).toBeDefined();
@@ -112,8 +112,8 @@ describe("Subagent cache alignment", () => {
 			const fullPromptB = STABLE_PREFIX + DYNAMIC_SUFFIX_B;
 
 			const opts = { includeClaudeCodeInstruction: true };
-			const blocksA = buildAnthropicSystemBlocks(fullPromptA, opts, structuredA);
-			const blocksB = buildAnthropicSystemBlocks(fullPromptB, opts, structuredB);
+			const blocksA = buildAnthropicSystemBlocks([fullPromptA], opts, structuredA);
+			const blocksB = buildAnthropicSystemBlocks([fullPromptB], opts, structuredB);
 
 			expect(blocksA).toBeDefined();
 			expect(blocksB).toBeDefined();
@@ -204,7 +204,7 @@ describe("Subagent cache alignment", () => {
 					{ text: "", cacheHint: "dynamic" },
 				],
 			};
-			const blocks = buildAnthropicSystemBlocks(STABLE_PREFIX, {}, structured);
+			const blocks = buildAnthropicSystemBlocks([STABLE_PREFIX], {}, structured);
 			expect(blocks).toBeDefined();
 			// Only 1 block emitted (empty one filtered)
 			expect(blocks!.length).toBe(1);
@@ -220,7 +220,7 @@ describe("Subagent cache alignment", () => {
 
 	describe("plain string backward compatibility", () => {
 		it("buildAnthropicSystemBlocks produces single block for plain string", () => {
-			const blocks = buildAnthropicSystemBlocks("Stay concise.", {});
+			const blocks = buildAnthropicSystemBlocks(["Stay concise."], {});
 			expect(blocks).toBeDefined();
 			expect(blocks!.length).toBe(1);
 			expect(blocks![0].text).toBe("Stay concise.");

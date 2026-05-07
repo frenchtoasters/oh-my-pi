@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { transformMessages } from "@oh-my-pi/pi-ai/providers/transform-messages";
-import type { AssistantMessage, Message, Model, ToolResultMessage } from "@oh-my-pi/pi-ai/types";
+import type { AssistantMessage, Message, Model, TextContent, ToolResultMessage } from "@oh-my-pi/pi-ai/types";
 
 /**
  * Regression test for: "The number of toolResult blocks at messages.N.content
@@ -81,7 +81,7 @@ describe("Orphaned Tool Results", () => {
 				provider: "anthropic",
 				model: "claude-3-5-sonnet-20241022",
 				usage,
-				stopReason: "endTurn",
+				stopReason: "stop",
 				timestamp: Date.now(),
 			} as AssistantMessage,
 			makeToolResult("orphan_1"),
@@ -105,7 +105,9 @@ describe("Orphaned Tool Results", () => {
 		// Orphan dropped; synthetic "No result provided" injected for the real tool call
 		expect(toolResults).toHaveLength(1);
 		expect(toolResults[0].toolCallId).toBe("tool_real");
-		expect(toolResults[0].content[0].text).toContain("No result provided");
+		const content0 = toolResults[0].content[0];
+		expect(content0.type).toBe("text");
+		expect((content0 as TextContent).text).toContain("No result provided");
 	});
 
 	it("keeps valid tool_results and drops orphaned ones in mixed sequence", () => {
@@ -169,6 +171,8 @@ describe("Orphaned Tool Results", () => {
 		const toolResults = transformed.filter(m => m.role === "toolResult") as ToolResultMessage[];
 
 		expect(toolResults).toHaveLength(1);
-		expect(toolResults[0].content[0].text).toBe("Partial result");
+		const content0 = toolResults[0].content[0];
+		expect(content0.type).toBe("text");
+		expect((content0 as TextContent).text).toBe("Partial result");
 	});
 });
