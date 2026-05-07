@@ -160,9 +160,13 @@ import {
 	shouldCompact,
 } from "./compaction";
 import { DEFAULT_PRUNE_CONFIG, pruneToolOutputs } from "./compaction/pruning";
-import { deduplicateToolCalls } from "./compaction/strategies/deduplication";
-import { purgeErrorInputs } from "./compaction/strategies/purge-errors";
-import { supersedeWrites } from "./compaction/strategies/supersede-writes";
+import {
+	applyPruneState,
+	computePruneState,
+	createEmptyPruneState,
+	type PruneConfig,
+	type PruneState,
+} from "./compaction/strategies/prune-state.js";
 import { composeTransforms } from "./compaction/transform-compose";
 import {
 	type BashExecutionMessage,
@@ -510,6 +514,23 @@ export class AgentSession {
 	// Extension system
 	#extensionRunner: ExtensionRunner | undefined = undefined;
 	#turnIndex = 0;
+	#pruneState: PruneState = createEmptyPruneState();
+	#pruneConfig: PruneConfig = {
+		deduplication: {
+			protectedTools: ["task", "skill", "todowrite", "todoread", "write", "edit", "read"],
+			protectedFilePatterns: [],
+			turnProtectionTurns: 2,
+		},
+		purgeErrors: {
+			turnThreshold: 4,
+			protectedTools: ["task", "skill", "todowrite", "todoread", "write", "edit", "read"],
+		},
+		supersedeWrites: {
+			protectedFilePatterns: [],
+			writeTools: ["write", "edit"],
+			readTools: ["read"],
+		},
+	};
 
 	#skills: Skill[];
 	#skillWarnings: SkillWarning[];
@@ -625,25 +646,9 @@ export class AgentSession {
 		this.#validateRetryFallbackChains();
 		this.#toolRegistry = config.toolRegistry ?? new Map();
 		this.#transformContext = config.transformContext ?? (messages => messages);
-		// Context pruning: lightweight strategies that run on each transformContext call
-		const pruningTransform = (messages: AgentMessage[]) => {
-			let result = messages;
-			result = deduplicateToolCalls(result, this.#turnIndex, {
-				protectedTools: ["task", "skill", "todowrite", "todoread", "write", "edit", "read"],
-				protectedFilePatterns: [],
-				turnProtectionTurns: 2,
-			});
-			result = purgeErrorInputs(result, this.#turnIndex, {
-				turnThreshold: 4,
-				protectedTools: ["task", "skill", "todowrite", "todoread", "write", "edit", "read"],
-			});
-			result = supersedeWrites(result, this.#turnIndex, {
-				protectedFilePatterns: [],
-				writeTools: ["write", "edit"],
-				readTools: ["read"],
-			});
-			return result;
-		};
+		// Context pruning: apply the pre-computed prune state on each transformContext call.
+		// State is recomputed at turn boundaries (agent_start, turn_end) and after compaction.
+		const pruningTransform = (messages: AgentMessage[]) => applyPruneState(messages, this.#pruneState);
 		const existingTransform = this.#transformContext;
 		this.#transformContext = composeTransforms([existingTransform, pruningTransform]);
 		this.agent.transformContext = this.#transformContext;
@@ -1863,11 +1868,17 @@ export class AgentSession {
 		}
 	}
 
+	/** Recompute the stored prune state from the current message history. */
+	#recomputePruneState(): void {
+		this.#pruneState = computePruneState(this.agent.state.messages, this.#turnIndex, this.#pruneConfig);
+	}
+
 	/** Emit extension events based on session events */
 	async #emitExtensionEvent(event: AgentSessionEvent): Promise<void> {
 		if (!this.#extensionRunner) return;
 		if (event.type === "agent_start") {
 			this.#turnIndex = 0;
+			this.#recomputePruneState();
 			await this.#extensionRunner.emit({ type: "agent_start" });
 		} else if (event.type === "agent_end") {
 			await this.#extensionRunner.emit({ type: "agent_end", messages: event.messages });
@@ -1887,6 +1898,7 @@ export class AgentSession {
 			};
 			await this.#extensionRunner.emit(hookEvent);
 			this.#turnIndex++;
+			this.#recomputePruneState();
 		} else if (event.type === "message_start") {
 			const extensionEvent: MessageStartEvent = {
 				type: "message_start",
@@ -4439,6 +4451,7 @@ export class AgentSession {
 			const newEntries = this.sessionManager.getEntries();
 			const sessionContext = this.buildDisplaySessionContext();
 			this.agent.replaceMessages(sessionContext.messages);
+			this.#recomputePruneState();
 			this.#syncTodoPhasesFromBranch();
 			this.#closeCodexProviderSessionsForHistoryRewrite();
 
