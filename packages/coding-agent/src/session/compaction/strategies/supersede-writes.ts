@@ -1,10 +1,7 @@
 import type { AgentMessage } from "@oh-my-pi/pi-agent-core";
 import type { ToolCall } from "@oh-my-pi/pi-ai";
-import { type DCPState, markForPruning } from "../dcp-state";
-import { countTokens } from "../tokenizer";
 
 export interface SupersedeWritesConfig {
-	enabled: boolean;
 	protectedFilePatterns: string[];
 	/** Tool names considered as "write" operations */
 	writeTools: string[];
@@ -13,7 +10,6 @@ export interface SupersedeWritesConfig {
 }
 
 export const DEFAULT_SUPERSEDE_WRITES_CONFIG: SupersedeWritesConfig = {
-	enabled: true,
 	protectedFilePatterns: [],
 	writeTools: ["write", "edit"],
 	readTools: ["read"],
@@ -21,17 +17,13 @@ export const DEFAULT_SUPERSEDE_WRITES_CONFIG: SupersedeWritesConfig = {
 
 export function supersedeWrites(
 	messages: AgentMessage[],
-	state: DCPState,
+	_currentTurn: number,
 	config: SupersedeWritesConfig,
 ): AgentMessage[] {
-	if (!config.enabled) {
-		return messages;
-	}
-
 	// Pre-compile globs for protected file patterns
 	const protectedGlobs = config.protectedFilePatterns.map(pattern => new Bun.Glob(pattern));
 
-	// 1. Scan for all "read" operations and their last indices per file
+	// 1. Scan for all "read" operations and record the last index per file
 	const lastReadIndex: Map<string, number> = new Map();
 
 	for (let i = 0; i < messages.length; i++) {
@@ -50,7 +42,7 @@ export function supersedeWrites(
 
 	const supersededToolCallIds = new Set<string>();
 
-	// 2. Identify writes superseded by subsequent reads
+	// 2. Identify writes superseded by a subsequent read of the same file
 	for (let i = 0; i < messages.length; i++) {
 		const msg = messages[i];
 		if (msg.role === "assistant") {
@@ -60,8 +52,6 @@ export function supersedeWrites(
 					if (typeof filePath === "string" && !protectedGlobs.some(glob => glob.match(filePath))) {
 						const lastRead = lastReadIndex.get(filePath);
 						if (lastRead !== undefined && lastRead > i) {
-							const tokenCount = countTokens(JSON.stringify(content.arguments));
-							markForPruning(state, content.id, tokenCount);
 							supersededToolCallIds.add(content.id);
 						}
 					}

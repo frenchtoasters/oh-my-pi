@@ -1,38 +1,48 @@
 import type { AgentMessage } from "@oh-my-pi/pi-agent-core";
-import { type DCPState, markForPruning } from "../dcp-state";
 
 export interface PurgeErrorsConfig {
-	enabled: boolean;
 	turnThreshold: number;
 	protectedTools: string[];
 }
 
-export function purgeErrorInputs(messages: AgentMessage[], state: DCPState, config: PurgeErrorsConfig): AgentMessage[] {
-	if (!config.enabled) {
-		return messages;
+/** Count assistant messages up to (but not including) the message at msgIndex. */
+function turnAtIndex(messages: AgentMessage[], msgIndex: number): number {
+	let turn = 0;
+	for (let i = 0; i < msgIndex; i++) {
+		if (messages[i].role === "assistant") turn++;
 	}
+	return turn;
+}
 
+export function purgeErrorInputs(
+	messages: AgentMessage[],
+	currentTurn: number,
+	config: PurgeErrorsConfig,
+): AgentMessage[] {
+	// Build a map from toolCallId -> {tool name, turn}
+	const toolCallMeta = new Map<string, { tool: string; turn: number }>();
+
+	messages.forEach((msg, msgIndex) => {
+		if (msg.role === "assistant") {
+			const turn = turnAtIndex(messages, msgIndex);
+			msg.content.forEach(block => {
+				if (block.type === "toolCall") {
+					toolCallMeta.set(block.id, { tool: block.name, turn });
+				}
+			});
+		}
+	});
+
+	// 1. Identify which tool calls to prune based on error results
 	const prunedIds = new Set<string>();
-
-	// 1. Identify which tool calls to prune
 	for (const message of messages) {
 		if (message.role === "toolResult" && message.isError) {
-			const entry = state.toolParameters.get(message.toolCallId);
+			const meta = toolCallMeta.get(message.toolCallId);
 
-			if (!entry) {
-				continue;
-			}
+			if (!meta) continue;
+			if (config.protectedTools.includes(meta.tool)) continue;
+			if (currentTurn - meta.turn < config.turnThreshold) continue;
 
-			if (config.protectedTools.includes(entry.tool)) {
-				continue;
-			}
-
-			if (state.currentTurn - entry.turn < config.turnThreshold) {
-				continue;
-			}
-
-			// Mark in state for consistency
-			markForPruning(state, message.toolCallId, entry.tokenCount);
 			prunedIds.add(message.toolCallId);
 		}
 	}
@@ -41,11 +51,10 @@ export function purgeErrorInputs(messages: AgentMessage[], state: DCPState, conf
 		return messages;
 	}
 
-	// 2. Build new messages array with pruned tool call arguments
+	// 2. Replace pruned tool call arguments (keep the call, blank its inputs)
 	return messages.map(message => {
 		if (message.role === "assistant") {
 			const hasPruned = message.content.some(c => c.type === "toolCall" && prunedIds.has(c.id));
-
 			if (!hasPruned) return message;
 
 			return {

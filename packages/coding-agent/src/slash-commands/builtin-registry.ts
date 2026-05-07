@@ -15,13 +15,6 @@ import {
 	MarketplaceManager,
 } from "../extensibility/plugins/marketplace";
 import type { InteractiveModeContext } from "../modes/types";
-import {
-	handleDCPContext,
-	handleDCPStats,
-	handleDecompress,
-	handleRecompress,
-} from "../session/compaction/dcp-commands";
-import { countTokensForMessages } from "../session/compaction/tokenizer";
 import { parseMarketplaceInstallArgs, parsePluginScopeArgs } from "./marketplace-install-parser";
 
 function refreshStatusLine(ctx: InteractiveModeContext): void {
@@ -547,78 +540,6 @@ const BUILTIN_SLASH_COMMAND_REGISTRY: ReadonlyArray<BuiltinSlashCommandSpec> = [
 			const customInstructions = command.args || undefined;
 			runtime.ctx.editor.setText("");
 			await runtime.ctx.handleCompactCommand(customInstructions);
-		},
-	},
-	{
-		name: "decompress",
-		description: "Restore a compressed conversation block (undo compression)",
-		inlineHint: "<blockId>",
-		allowArgs: true,
-		handle: (command, runtime) => {
-			const blockId = command.args?.trim();
-			if (!blockId) {
-				runtime.ctx.showStatus("Usage: /decompress <blockId> (e.g., /decompress b1)");
-				return;
-			}
-			const state = runtime.ctx.session.getDCPState();
-			if (!state) {
-				runtime.ctx.showStatus("DCP is not enabled");
-				return;
-			}
-			const result = handleDecompress(state, blockId);
-			runtime.ctx.showStatus(result.message);
-			runtime.ctx.editor.setText("");
-		},
-	},
-	{
-		name: "recompress",
-		description: "Re-apply a previously decompressed conversation block",
-		inlineHint: "<blockId>",
-		allowArgs: true,
-		handle: (command, runtime) => {
-			const blockId = command.args?.trim();
-			if (!blockId) {
-				runtime.ctx.showStatus("Usage: /recompress <blockId> (e.g., /recompress b1)");
-				return;
-			}
-			const state = runtime.ctx.session.getDCPState();
-			if (!state) {
-				runtime.ctx.showStatus("DCP is not enabled");
-				return;
-			}
-			const result = handleRecompress(state, blockId);
-			runtime.ctx.showStatus(result.message);
-			runtime.ctx.editor.setText("");
-		},
-	},
-	{
-		name: "dcp",
-		description: "Dynamic Context Pruning commands",
-		inlineHint: "<stats|context>",
-		allowArgs: true,
-		subcommands: [
-			{ name: "stats", description: "Show DCP token savings statistics" },
-			{ name: "context", description: "Show DCP context overview" },
-		],
-		handle: (command, runtime) => {
-			const subcommand = command.args?.trim();
-			const state = runtime.ctx.session.getDCPState();
-			if (!state) {
-				runtime.ctx.showStatus("DCP is not enabled");
-				runtime.ctx.editor.setText("");
-				return;
-			}
-			if (subcommand === "stats") {
-				const result = handleDCPStats(state);
-				runtime.ctx.showStatus(result.message);
-			} else if (subcommand === "context") {
-				const tokenCount = countTokensForMessages(runtime.ctx.session.messages);
-				const result = handleDCPContext(state, tokenCount);
-				runtime.ctx.showStatus(result.message);
-			} else {
-				runtime.ctx.showStatus("Usage: /dcp <stats|context>");
-			}
-			runtime.ctx.editor.setText("");
 		},
 	},
 	{

@@ -159,10 +159,10 @@ import {
 	prepareCompaction,
 	shouldCompact,
 } from "./compaction";
-import type { DCPConfig } from "./compaction/dcp-config";
-import { createDCPState, type DCPState } from "./compaction/dcp-state";
-import { createDCPTransform } from "./compaction/dcp-transform";
 import { DEFAULT_PRUNE_CONFIG, pruneToolOutputs } from "./compaction/pruning";
+import { deduplicateToolCalls } from "./compaction/strategies/deduplication";
+import { purgeErrorInputs } from "./compaction/strategies/purge-errors";
+import { supersedeWrites } from "./compaction/strategies/supersede-writes";
 import { composeTransforms } from "./compaction/transform-compose";
 import {
 	type BashExecutionMessage,
@@ -510,7 +510,6 @@ export class AgentSession {
 	// Extension system
 	#extensionRunner: ExtensionRunner | undefined = undefined;
 	#turnIndex = 0;
-	#dcpState: DCPState | undefined;
 
 	#skills: Skill[];
 	#skillWarnings: SkillWarning[];
@@ -626,57 +625,28 @@ export class AgentSession {
 		this.#validateRetryFallbackChains();
 		this.#toolRegistry = config.toolRegistry ?? new Map();
 		this.#transformContext = config.transformContext ?? (messages => messages);
-		// DCP initialization
-		const dcpEnabled = this.settings.get("dcp.enabled") ?? true;
-		if (dcpEnabled) {
-			this.#dcpState = createDCPState();
-			const defaultProtectedTools = [
-				...(this.settings.get("dcp.protectedTools") ?? [
-					"task",
-					"skill",
-					"todowrite",
-					"todoread",
-					"compress",
-					"write",
-					"edit",
-					"read",
-				]),
-			];
-			const dcpConfig: DCPConfig = {
-				enabled: true,
-				strategies: {
-					deduplication: {
-						enabled: this.settings.get("dcp.strategies.deduplication.enabled") ?? true,
-						protectedTools: defaultProtectedTools,
-						protectedFilePatterns: [...(this.settings.get("dcp.protectedFilePatterns") ?? [])],
-						turnProtectionTurns: this.settings.get("dcp.turnProtection.turns") ?? 2,
-					},
-					purgeErrors: {
-						enabled: this.settings.get("dcp.strategies.purgeErrors.enabled") ?? true,
-						turnThreshold: this.settings.get("dcp.strategies.purgeErrors.turnThreshold") ?? 4,
-						protectedTools: defaultProtectedTools,
-					},
-					supersedeWrites: {
-						enabled: this.settings.get("dcp.strategies.supersedeWrites.enabled") ?? true,
-						protectedFilePatterns: [...(this.settings.get("dcp.protectedFilePatterns") ?? [])],
-						writeTools: ["write", "edit"],
-						readTools: ["read"],
-					},
-				},
-				nudge: {
-					enabled: this.settings.get("dcp.nudge.enabled") ?? true,
-					maxContextLimit: this.settings.get("dcp.nudge.maxContextLimit") ?? 100000,
-					minContextLimit: this.settings.get("dcp.nudge.minContextLimit") ?? 50000,
-					frequency: this.settings.get("dcp.nudge.frequency") ?? 5,
-					iterationThreshold: this.settings.get("dcp.nudge.iterationThreshold") ?? 15,
-				},
-			};
-			const dcpTransform = createDCPTransform(this.#dcpState, dcpConfig);
-			const existingTransform = this.#transformContext;
-			this.#transformContext = composeTransforms([existingTransform, dcpTransform]);
-			// Push composed transform to Agent so the agent loop uses it too
-			this.agent.transformContext = this.#transformContext;
-		}
+		// Context pruning: lightweight strategies that run on each transformContext call
+		const pruningTransform = (messages: AgentMessage[]) => {
+			let result = messages;
+			result = deduplicateToolCalls(result, this.#turnIndex, {
+				protectedTools: ["task", "skill", "todowrite", "todoread", "write", "edit", "read"],
+				protectedFilePatterns: [],
+				turnProtectionTurns: 2,
+			});
+			result = purgeErrorInputs(result, this.#turnIndex, {
+				turnThreshold: 4,
+				protectedTools: ["task", "skill", "todowrite", "todoread", "write", "edit", "read"],
+			});
+			result = supersedeWrites(result, this.#turnIndex, {
+				protectedFilePatterns: [],
+				writeTools: ["write", "edit"],
+				readTools: ["read"],
+			});
+			return result;
+		};
+		const existingTransform = this.#transformContext;
+		this.#transformContext = composeTransforms([existingTransform, pruningTransform]);
+		this.agent.transformContext = this.#transformContext;
 		this.#onPayload = config.onPayload;
 		this.#onResponse = config.onResponse;
 		this.#convertToLlm = config.convertToLlm ?? convertToLlm;
@@ -1205,12 +1175,6 @@ export class AgentSession {
 			const hasToolCalls = msg.content.some(content => content.type === "toolCall");
 			if (hasToolCalls) {
 				return;
-			}
-			// Only increment the DCP turn counter on final, non-aborted assistant stops.
-			// Tool-use turns and aborted turns should not advance the counter, as turn
-			// protection logic relies on accurate turn counts.
-			if (this.#dcpState && msg.stopReason !== "aborted") {
-				this.#dcpState.currentTurn++;
 			}
 			if (msg.stopReason !== "error" && msg.stopReason !== "aborted") {
 				if (this.#enforceRewindBeforeYield()) {
@@ -2752,9 +2716,6 @@ export class AgentSession {
 	async convertMessagesToLlm(messages: AgentMessage[], signal?: AbortSignal): Promise<Message[]> {
 		const transformedMessages = await this.#transformContext(messages, signal);
 		return await this.#convertToLlm(transformedMessages);
-	}
-	getDCPState(): DCPState | undefined {
-		return this.#dcpState;
 	}
 
 	/** Apply session-level stream hooks to a direct side request. */
