@@ -2,6 +2,77 @@
 
 ## [Unreleased]
 
+## [14.7.2] - 2026-05-06
+### Breaking Changes
+
+- Removed the exported `BUILTIN_TOOL_METADATA` API, including `BuiltinEntry`-style metadata exports and discoverable-built-in helper exports, which will break consumers relying on those symbols
+
+### Changed
+
+- Updated discoverable tool search (`search_tool_bm25` and related discovery metadata) to read each tool’s own `summary` field when present, improving discoverability descriptions for built-in tools
+
+### Fixed
+
+- Fixed SearXNG web search Basic Auth validation to reject RFC 7617 control characters and clarified the equivalent `config.yml` and environment variable settings.
+- Fixed extension commands that return without starting a model turn leaving the interactive `Working…` spinner active indefinitely. (#927)
+- Fixed `authHeader: true` provider overrides without custom `models` so built-in model transport headers receive `Authorization: Bearer <resolved-key>` (#929).
+
+## [14.7.1] - 2026-05-06
+
+### Added
+
+- Added `pr_create` operation to the GitHub tool to create pull requests with title/body (or `fill`), base/head branch, draft, reviewer, assignee, and label options and return a summarized result including the new PR URL
+- Added `read.summarize.prose` setting to keep Markdown and plain-text reads out of the structural summarizer by default.
+
+### Changed
+
+- Changed the `PI_GREP_WORKERS` environment variable help text to state that it sets filesystem walker workers, defaults to 4, and uses `0` for automatic worker selection
+- Changed hashline replacement and pure-insert auto-absorb to also drop a single duplicated structural-closing line (`}`, `);`, `]`, etc.) on either boundary when keeping it would unbalance brackets. The pure-insert variant fires regardless of `edit.hashlineAutoDropPureInsertDuplicates`, while the existing 2+ line generic absorb stays gated on that setting.
+
+## [14.7.0] - 2026-05-04
+### Breaking Changes
+
+- Changed session system-prompt APIs to use ordered string block arrays by requiring `buildSystemPrompt`, `CreateAgentSessionOptions.systemPrompt`, `Session.rebuildSystemPrompt`, and extension `before_agent_start`/`getSystemPrompt` hooks to accept and return `systemPrompt: string[]` instead of a plain system-prompt string or separate `projectPrompt` field
+- Changed `buildSystemPrompt` and session `rebuildSystemPrompt` APIs to return `{ systemPrompt, projectPrompt }`, requiring callers expecting a plain system prompt string to update to the new shape
+- Removed the top-level `sel` parameter from the `read` tool schema, requiring callers to migrate to `path`-embedded selectors (for example `path:50-100`, `path:raw`, or `https://...:L1-L40`)
+
+### Added
+
+- Added a separate `projectPrompt` artifact containing per-session project context (workstation, context files, AGENTS.md rules, workspace tree, and append prompt) so dynamic context is decoupled from the static system prompt
+- Added `Project prompt` token accounting to context-usage breakdowns and charts
+- Added `tools.elideFileMutationInputs` setting to optionally elide large `write`, `edit`, and `apply_patch` payloads in history after successful mutations
+- Added hashline-style return data for elided `write` calls so tools can include the resulting file content without leaking full input text
+- Added `buildDirectoryTree` and `DirectoryTree` exports to generate configurable directory trees with options for depth, entry limits, hidden-file handling, and truncation caps
+- Added `buildWorkspaceTree` and `WorkspaceTree` exports so callers can precompute and pass a workspace context to prompt generation
+- Added `workspaceTree` support to `buildSystemPrompt` options to reuse a prebuilt directory snapshot
+- Added `read.summarize.enabled`, `read.summarize.minBodyLines`, and `read.summarize.minCommentLines` settings to control whether `read` returns structural summaries and how many multiline body/comment lines are collapsed
+- Added `edit.hashlineAutoDropPureInsertDuplicates` setting to opt into dropping 2+ pure-insert hashline payload lines that duplicate adjacent file context; default is `false`.
+
+### Changed
+
+- Updated session dump and HTML export output to serialize ordered system-prompt blocks (including project context) and removed the dedicated project-prompt dump section
+- Renamed context-usage system-prompt accounting from a separate `projectPrompt` bucket to `systemContext` to match the new multi-block prompt structure
+- Changed prompt delivery to inject non-empty `projectPrompt` as a leading `developer` message before conversation messages instead of merging it into the base system prompt
+- Added `projectPrompt` to session dumps to expose the injected per-session project context separately
+- Changed write success output and preview rendering to display hashline-formatted written content from captured file text when mutation inputs are elided
+- Changed `read` directory rendering to return a two-level recency-sorted directory tree (including nested folders) instead of a flat alphabetical entry list, while still applying configurable truncation
+- Changed generated system prompts to include a working-directory tree block after directory context, showing recent files/directories (depth ≤ 3) and truncation notices when entries are elided
+- Changed `read` summary rendering to merge opening- and closing-brace boundaries around elided sections into a single `..` line (including closers like `};` or `})`), reducing those segments to one concise anchored summary line
+- Changed default `read` output for parseable code files without an explicit selector to return a structural summary instead of full verbatim lines, while still supporting full output for `:raw` and explicit ranges
+- Changed truncation/pagination hints in read, archive, and SQLite outputs to use colon syntax (`Use :<offset>`) when continuing reads
+- Changed the read tool UI preview title to include summary elision counts when a summary is returned
+- Changed hashline pure-insert duplicate auto-drop to be opt-in through `edit.hashlineAutoDropPureInsertDuplicates` instead of always enabled.
+
+### Fixed
+
+- Fixed selector parsing for colon-containing paths by only splitting `:<sel>` when the suffix matches a valid line-range or `raw` pattern, preventing paths like `db.sqlite:users:42` from being misread as selectors
+
+## [14.6.6] - 2026-05-04
+
+### Added
+
+- Added Ctrl+D draft persistence: pressing Ctrl+D with text in the editor now exits the app and saves the unsent text as a per-session draft. Resuming the same session (e.g. via `--resume`) restores the draft into the editor (one-shot, removed after restore).
+
 ## [14.6.4] - 2026-05-03
 ### Added
 

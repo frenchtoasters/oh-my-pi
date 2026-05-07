@@ -50,7 +50,7 @@ const searchSchema = Type.Object({
 
 export type SearchToolInput = Static<typeof searchSchema>;
 
-const DEFAULT_MATCH_LIMIT = 500;
+export const DEFAULT_MATCH_LIMIT = 100;
 
 export interface SearchToolDetails {
 	truncation?: TruncationResult;
@@ -80,6 +80,8 @@ type SearchParams = Static<typeof searchSchema>;
 export class SearchTool implements AgentTool<typeof searchSchema, SearchToolDetails> {
 	readonly name = "search";
 	readonly label = "Search";
+	readonly loadMode = "discoverable";
+	readonly summary = "Search file contents using ripgrep (fast text search)";
 	readonly description: string;
 	readonly parameters = searchSchema;
 	readonly strict = true;

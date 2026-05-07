@@ -1,32 +1,30 @@
 import type { AgentMessage } from "@oh-my-pi/pi-agent-core";
-import { type DCPState, getToolSignature, markForPruning } from "../dcp-state";
+import { turnAtIndex } from "./utils.js";
 
 export interface DeduplicationConfig {
-	enabled: boolean;
 	protectedTools: string[];
 	protectedFilePatterns: string[];
 	turnProtectionTurns: number;
 }
 
+function getToolSignature(name: string, args: Record<string, unknown>): string {
+	return JSON.stringify({ name, args });
+}
+
 export function deduplicateToolCalls(
 	messages: AgentMessage[],
-	state: DCPState,
+	currentTurn: number,
 	config: DeduplicationConfig,
 ): AgentMessage[] {
-	if (!config.enabled) {
-		return messages;
-	}
-
 	// Pre-compile globs for protected file patterns
 	const protectedGlobs = config.protectedFilePatterns.map(pattern => new Bun.Glob(pattern));
 
-	// Map: signature -> {index: number, toolCallId: string, tokenCount: number}[]
+	// Map: signature -> {messageIndex, toolCallId, turn}[]
 	const signatureMap = new Map<
 		string,
 		{
 			messageIndex: number;
 			toolCallId: string;
-			tokenCount: number;
 			turn: number;
 		}[]
 	>();
@@ -36,48 +34,42 @@ export function deduplicateToolCalls(
 		if (msg.role === "assistant") {
 			msg.content.forEach(block => {
 				if (block.type === "toolCall") {
-					const signature = getToolSignature(block.name, block.arguments);
-
 					// Protection: Protected tools (never deduplicate these)
 					if (config.protectedTools.includes(block.name)) return;
 
 					// Protection: Protected file patterns (never deduplicate these)
-					const filePath = block.arguments.filePath;
-					if (typeof filePath === "string" && protectedGlobs.some(glob => glob.match(filePath))) {
+					// NOTE: Only checks `arguments.path` — tools using other arg names for file targets are not covered.
+					const targetPath = block.arguments?.path;
+					if (typeof targetPath === "string" && protectedGlobs.some(glob => glob.match(targetPath))) {
 						return;
 					}
 
-					const entry = state.toolParameters.get(block.id);
+					const signature = getToolSignature(block.name, block.arguments as Record<string, unknown>);
+					const turn = turnAtIndex(messages, msgIndex);
+
 					const list = signatureMap.get(signature) ?? [];
-					list.push({
-						messageIndex: msgIndex,
-						toolCallId: block.id,
-						tokenCount: entry?.tokenCount ?? 0,
-						turn: entry?.turn ?? 0,
-					});
+					list.push({ messageIndex: msgIndex, toolCallId: block.id, turn });
 					signatureMap.set(signature, list);
 				}
 			});
 		}
 	});
 
-	// 2. Mark for pruning (apply turn protection here, not during map building)
+	// 2. Determine which tool call IDs to prune (all but the last, unless turn-protected)
 	const prunedToolCallIds = new Set<string>();
 	for (const [_signature, entries] of signatureMap.entries()) {
 		if (entries.length > 1) {
-			// Mark all except the last one for pruning, unless turn-protected
 			for (let i = 0; i < entries.length - 1; i++) {
 				const entry = entries[i];
-				if (entry.turn >= state.currentTurn - config.turnProtectionTurns) {
+				if (entry.turn >= currentTurn - config.turnProtectionTurns) {
 					continue;
 				}
-				markForPruning(state, entry.toolCallId, entry.tokenCount);
 				prunedToolCallIds.add(entry.toolCallId);
 			}
 		}
 	}
 
-	// 3. Rebuild messages
+	// 3. Rebuild messages, dropping pruned tool calls and their results
 	return messages
 		.map(msg => {
 			if (msg.role === "assistant") {
@@ -88,7 +80,10 @@ export function deduplicateToolCalls(
 					return true;
 				});
 
-				if (newContent.length === 0) return null;
+				// Retain a placeholder to preserve role alternation — downstream passes
+				// (purgeErrors, supersedeWrites) only act on toolCall blocks, so this is safe.
+				if (newContent.length === 0)
+					return { ...msg, content: [{ type: "text" as const, text: "[tool calls deduplicated]" }] };
 
 				return { ...msg, content: newContent };
 			}

@@ -13,6 +13,7 @@ import {
 	type Context,
 	type MessageAttribution,
 	type Model,
+	type OpenAICompat,
 	type ProviderSessionState,
 	type ServiceTier,
 	type StreamFunction,
@@ -25,6 +26,7 @@ import {
 	createOpenAIResponsesHistoryPayload,
 	getOpenAIResponsesHistoryItems,
 	getOpenAIResponsesHistoryPayload,
+	normalizeSystemPrompts,
 	resolveCacheRetention,
 	sanitizeOpenAIResponsesHistoryItemsForReplay,
 } from "../utils";
@@ -71,6 +73,13 @@ function getPromptCacheRetention(baseUrl: string, cacheRetention: CacheRetention
 		return "24h";
 	}
 	return undefined;
+}
+
+export function normalizeOpenAIResponsesPromptCacheKey(sessionId: string | undefined): string | undefined {
+	if (!sessionId || sessionId.length === 0) return undefined;
+	const wellFormed = sessionId.toWellFormed();
+	if (wellFormed.length <= 64) return wellFormed;
+	return `pc_${Bun.hash(wellFormed).toString(36)}`;
 }
 
 // OpenAI Responses-specific options
@@ -331,7 +340,9 @@ function createClient(
 function getOpenAIResponsesCacheSessionId(
 	options: Pick<OpenAIResponsesOptions, "cacheRetention" | "sessionId"> | undefined,
 ): string | undefined {
-	return resolveCacheRetention(options?.cacheRetention) === "none" ? undefined : options?.sessionId;
+	return resolveCacheRetention(options?.cacheRetention) === "none"
+		? undefined
+		: normalizeOpenAIResponsesPromptCacheKey(options?.sessionId);
 }
 
 function buildParams(
@@ -352,12 +363,11 @@ function buildParams(
 	);
 	const messages: ResponseInput = [...conversationMessages];
 
-	if (context.systemPrompt) {
-		const role = model.reasoning && supportsDeveloperRole(resolvedBaseUrl ?? model) ? "developer" : "system";
-		messages.unshift({
-			role,
-			content: context.systemPrompt.toWellFormed(),
-		});
+	const systemPrompts = normalizeSystemPrompts(context.systemPrompt);
+	if (systemPrompts.length > 0) {
+		const role: "developer" | "system" =
+			model.reasoning && supportsDeveloperRole(resolvedBaseUrl ?? model) ? "developer" : "system";
+		messages.unshift(...systemPrompts.map(systemPrompt => ({ role, content: systemPrompt })));
 	}
 
 	const cacheRetention = resolveCacheRetention(options?.cacheRetention);
@@ -422,7 +432,9 @@ function buildParams(
 
 		if (options?.reasoning || options?.reasoningSummary) {
 			params.reasoning = {
-				effort: options?.reasoning || "medium",
+				effort: mapReasoningEffort(options?.reasoning || "medium", model.compat?.reasoningEffortMap) as NonNullable<
+					OpenAIResponsesSamplingParams["reasoning"]
+				>["effort"],
 				summary: options?.reasoningSummary || "auto",
 			};
 		} else if (model.name.startsWith("gpt-5")) {
@@ -440,6 +452,13 @@ function buildParams(
 	}
 
 	return { conversationMessages, params };
+}
+
+function mapReasoningEffort(
+	effort: NonNullable<OpenAIResponsesOptions["reasoning"]>,
+	reasoningEffortMap: OpenAICompat["reasoningEffortMap"] | undefined,
+): string {
+	return reasoningEffortMap?.[effort] ?? effort;
 }
 
 function isAzureOpenAIBaseUrl(baseUrl: string): boolean {

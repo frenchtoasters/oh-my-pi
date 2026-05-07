@@ -207,7 +207,7 @@ interface CursorToolResultEntry {
 
 export class Agent {
 	#state: AgentState = {
-		systemPrompt: "",
+		systemPrompt: [],
 		model: getBundledModel("google", "gemini-2.5-flash-lite-preview-06-17"),
 		thinkingLevel: undefined,
 		tools: [],
@@ -465,7 +465,7 @@ export class Agent {
 	}
 
 	// State mutators
-	setSystemPrompt(v: string) {
+	setSystemPrompt(v: string[]) {
 		this.#state.systemPrompt = v;
 	}
 

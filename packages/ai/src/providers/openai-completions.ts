@@ -9,6 +9,7 @@ import type {
 	ChatCompletionMessageParam,
 	ChatCompletionToolMessageParam,
 } from "openai/resources/chat/completions";
+import packageJson from "../../package.json" with { type: "json" };
 import type { Effort } from "../model-thinking";
 import { calculateCost } from "../models";
 import { getEnvApiKey } from "../stream";
@@ -32,6 +33,7 @@ import {
 	type ToolChoice,
 	type ToolResultMessage,
 } from "../types";
+import { normalizeSystemPrompts } from "../utils";
 import { createAbortSourceTracker } from "../utils/abort";
 import { AssistantMessageEventStream } from "../utils/event-stream";
 import { toFireworksWireModelId } from "../utils/fireworks-model-id";
@@ -781,10 +783,26 @@ async function createClient(
 	}
 	const rawApiKey = apiKey;
 
-	let headers = { ...(model.headers ?? {}), ...(extraHeaders ?? {}) };
+	let headers = { ...model.headers };
 	if (model.provider === "openrouter") {
-		headers["X-Title"] = "Oh-My-Pi";
+		// App attribution — opts the agent into OpenRouter's public rankings and per-app
+		// analytics. `HTTP-Referer` is the unique app identifier; without it nothing is
+		// tracked. `X-OpenRouter-Title` is the display name (`X-Title` is the legacy
+		// alias kept for back-compat). `X-OpenRouter-Categories` slots us into the
+		// `cli-agent` marketplace category. `User-Agent` overrides the default OpenAI
+		// SDK UA so traffic is identifiable in upstream provider logs.
+		// https://openrouter.ai/docs/app-attribution
+		headers["User-Agent"] = `Oh-My-Pi/${packageJson.version}`;
+		headers["HTTP-Referer"] = "https://github.com/can1357/oh-my-pi";
+		headers["X-OpenRouter-Title"] = "Oh-My-Pi";
+		headers["X-OpenRouter-Categories"] = "cli-agent";
+		// Always-on response caching: identical requests return cached responses for free.
+		// TTL 1h; first call hits the provider, every identical call within the window
+		// replays from OpenRouter's edge cache. https://openrouter.ai/docs/features/response-caching
+		headers["X-OpenRouter-Cache"] = "true";
+		headers["X-OpenRouter-Cache-TTL"] = "3600";
 	}
+	Object.assign(headers, extraHeaders);
 	if (model.provider === "kimi-code") {
 		headers = { ...getKimiCommonHeaders(), ...headers };
 	}
@@ -976,6 +994,14 @@ function buildParams(
 	) {
 		// OpenAI-style reasoning_effort
 		params.reasoning_effort = mapReasoningEffort(options.reasoning, compat.reasoningEffortMap) as Effort;
+	}
+
+	if (compat.disableReasoningOnToolChoice && params.tool_choice !== undefined) {
+		// DeepSeek reasoning models accept tools/tool_choice, but reject that
+		// control field while thinking is enabled. Keep the tool-selection
+		// contract and suppress reasoning for this single request.
+		delete params.reasoning_effort;
+		delete params.reasoning;
 	}
 
 	if (compat.disableReasoningOnForcedToolChoice && isForcedToolChoice(params.tool_choice)) {
@@ -1195,10 +1221,13 @@ export function convertMessages(
 		return generateFallbackToolCallId(seed);
 	};
 
-	if (context.systemPrompt) {
+	const systemPrompts = normalizeSystemPrompts(context.systemPrompt);
+	if (systemPrompts.length > 0) {
 		const useDeveloperRole = model.reasoning && compat.supportsDeveloperRole;
 		const role = useDeveloperRole ? "developer" : "system";
-		params.push({ role: role, content: context.systemPrompt.toWellFormed() });
+		for (const systemPrompt of systemPrompts) {
+			params.push({ role, content: systemPrompt });
+		}
 	}
 
 	let lastRole: string | null = null;

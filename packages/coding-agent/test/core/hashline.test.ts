@@ -49,6 +49,10 @@ function applyDiff(content: string, diff: string): string {
 	return applyHashlineEdits(content, parseHashline(diff)).lines;
 }
 
+function applyDiffWithPureInsertAutoDrop(content: string, diff: string): string {
+	return applyHashlineEdits(content, parseHashline(diff), { autoDropPureInsertDuplicates: true }).lines;
+}
+
 async function withTempDir(fn: (tempDir: string) => Promise<void>): Promise<void> {
 	const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "hashline-edit-"));
 	try {
@@ -58,9 +62,13 @@ async function withTempDir(fn: (tempDir: string) => Promise<void>): Promise<void
 	}
 }
 
-function hashlineExecuteOptions(tempDir: string, input: string): ExecuteHashlineSingleOptions {
+function hashlineExecuteOptions(
+	tempDir: string,
+	input: string,
+	settings = Settings.isolated(),
+): ExecuteHashlineSingleOptions {
 	return {
-		session: { cwd: tempDir } as ToolSession,
+		session: { cwd: tempDir, settings } as ToolSession,
 		input,
 		writethrough: async (targetPath, content) => {
 			await Bun.write(targetPath, content);
@@ -133,6 +141,30 @@ describe("hashline parser — block op syntax", () => {
 		expect(applyDiff(source, diff)).toBe(["new();", "// one", "// two"].join("\n"));
 	});
 
+	it("auto-absorbs a duplicated single structural suffix during replacement", () => {
+		const source = ["old();", "};"].join("\n");
+		const diff = [`= ${tag(1, "old();")}`, pl("new();"), pl("};")].join("\n");
+
+		expect(applyDiff(source, diff)).toBe(["new();", "};"].join("\n"));
+	});
+
+	it("auto-absorbs a duplicated single structural prefix during replacement", () => {
+		const source = ["};", "old();"].join("\n");
+		const diff = [`= ${tag(2, "old();")}`, pl("};"), pl("new();")].join("\n");
+
+		expect(applyDiff(source, diff)).toBe(["};", "new();"].join("\n"));
+	});
+
+	it("does not absorb a single structural replacement suffix when it preserves balance", () => {
+		// The replacement payload `if ok {` + `}` is itself net-zero, so the trailing
+		// `}` is a legitimate part of the new block, not a duplicate of the file's
+		// existing `}`. The single-line structural absorb must NOT fire here.
+		const source = ["old();", "}"].join("\n");
+		const diff = [`= ${tag(1, "old();")}`, pl("if ok {"), pl("}")].join("\n");
+
+		expect(applyDiff(source, diff)).toBe(["if ok {", "}", "}"].join("\n"));
+	});
+
 	it("does not auto-absorb a single duplicated boundary line", () => {
 		const source = ["keep", "old();"].join("\n");
 		const diff = [`= ${tag(2, "old();")}`, pl("keep"), pl("new();")].join("\n");
@@ -166,6 +198,94 @@ describe("hashline parser — block op syntax", () => {
 		expect(result.warnings).toBeDefined();
 		expect(result.warnings).toEqual(
 			expect.arrayContaining([expect.stringMatching(/Auto-absorbed 2 duplicate line\(s\) above replacement/)]),
+		);
+	});
+
+	it("does not auto-drop generic (multi-line) pure-insert duplicate boundaries by default", () => {
+		// Multi-line context echo (`aaa`, `bbb`) is gated on the
+		// `autoDropPureInsertDuplicates` opt-in, unlike the single-line
+		// structural absorb covered by the test below.
+		const source = ["aaa", "bbb", "ccc"].join("\n");
+		const diff = [`+ ${tag(2, "bbb")}`, pl("aaa"), pl("bbb"), pl("NEW")].join("\n");
+		expect(applyDiff(source, diff)).toBe("aaa\nbbb\naaa\nbbb\nNEW\nccc");
+	});
+
+	it("auto-drops a duplicated single structural suffix for pure insert by default", () => {
+		const source = ["if ok {", "   keep();", "   }"].join("\n");
+		const diff = [`< ${tag(3, "   }")}`, pl("   added();"), pl("   }")].join("\n");
+
+		expect(applyDiff(source, diff)).toBe(["if ok {", "   keep();", "   added();", "   }"].join("\n"));
+	});
+
+	it("auto-drops a duplicated single structural prefix for pure insert by default", () => {
+		const source = ["   });", "next();"].join("\n");
+		const diff = [`+ ${tag(1, "   });")}`, pl("   });"), pl("added();")].join("\n");
+
+		expect(applyDiff(source, diff)).toBe(["   });", "added();", "next();"].join("\n"));
+	});
+
+	it("does not drop a single structural pure-insert suffix when it preserves balance", () => {
+		const source = ["if outer {", "}"].join("\n");
+		const diff = [`< ${tag(2, "}")}`, pl("if inner {"), pl("}")].join("\n");
+
+		expect(applyDiff(source, diff)).toBe(["if outer {", "if inner {", "}", "}"].join("\n"));
+	});
+
+	it("auto-absorbs duplicated leading payload of a pure `+ ANCHOR` insert", () => {
+		// `+ 2 ~aaa ~bbb ~NEW`: payload echoes the two file lines AT/ABOVE the
+		// insertion point (aaa, bbb), then adds NEW. The leading echo is absorbed.
+		const source = ["aaa", "bbb", "ccc"].join("\n");
+		const diff = [`+ ${tag(2, "bbb")}`, pl("aaa"), pl("bbb"), pl("NEW")].join("\n");
+		expect(applyDiffWithPureInsertAutoDrop(source, diff)).toBe("aaa\nbbb\nNEW\nccc");
+	});
+
+	it("auto-absorbs context-wrap echo (leading-above + trailing-below) on `+ ANCHOR`", () => {
+		// `+ 2 ~aaa ~bbb ~NEW ~ccc ~ddd`: payload wraps NEW with context above
+		// (aaa, bbb) AND below (ccc, ddd). Both ends should be absorbed, leaving
+		// only NEW inserted after bbb.
+		const source = ["aaa", "bbb", "ccc", "ddd"].join("\n");
+		const diff = [`+ ${tag(2, "bbb")}`, pl("aaa"), pl("bbb"), pl("NEW"), pl("ccc"), pl("ddd")].join("\n");
+		expect(applyDiffWithPureInsertAutoDrop(source, diff)).toBe("aaa\nbbb\nNEW\nccc\nddd");
+	});
+
+	it("auto-absorbs duplicated trailing payload of a pure `< ANCHOR` insert", () => {
+		// Insert before line 3 ("ccc"). Trailing payload echoes the anchor and the
+		// line after it. Drop the trailing duplicates.
+		const source = ["aaa", "bbb", "ccc", "ddd"].join("\n");
+		const diff = [`< ${tag(3, "ccc")}`, pl("NEW"), pl("ccc"), pl("ddd")].join("\n");
+		expect(applyDiffWithPureInsertAutoDrop(source, diff)).toBe("aaa\nbbb\nNEW\nccc\nddd");
+	});
+
+	it("auto-absorbs duplicated leading payload at EOF insert", () => {
+		const source = ["aaa", "bbb", "ccc"].join("\n");
+		// `+ EOF` payload echoes the last two file lines, then adds NEW.
+		const diff = ["+ EOF", pl("bbb"), pl("ccc"), pl("NEW")].join("\n");
+		expect(applyDiffWithPureInsertAutoDrop(source, diff)).toBe("aaa\nbbb\nccc\nNEW");
+	});
+
+	it("auto-absorbs duplicated trailing payload at BOF insert", () => {
+		const source = ["aaa", "bbb", "ccc"].join("\n");
+		// `< BOF` payload prepends NEW but trails with the first two file lines.
+		const diff = ["< BOF", pl("NEW"), pl("aaa"), pl("bbb")].join("\n");
+		expect(applyDiffWithPureInsertAutoDrop(source, diff)).toBe("NEW\naaa\nbbb\nccc");
+	});
+
+	it("does not auto-absorb a single duplicated boundary line in a pure insert", () => {
+		// One-line echo should NOT trigger absorb (matches replacement-absorb threshold).
+		const source = ["aaa", "bbb", "ccc"].join("\n");
+		const diff = [`+ ${tag(2, "bbb")}`, pl("bbb"), pl("NEW")].join("\n");
+		// Only "bbb" matches above; that's a 1-line dup, not absorbed.
+		expect(applyDiffWithPureInsertAutoDrop(source, diff)).toBe("aaa\nbbb\nbbb\nNEW\nccc");
+	});
+
+	it("surfaces a warning when pure-insert duplicates are auto-dropped", () => {
+		const source = ["aaa", "bbb", "ccc"].join("\n");
+		const diff = [`+ ${tag(2, "bbb")}`, pl("aaa"), pl("bbb"), pl("NEW")].join("\n");
+		const result = applyHashlineEdits(source, parseHashline(diff), { autoDropPureInsertDuplicates: true });
+		expect(result.lines).toBe("aaa\nbbb\nNEW\nccc");
+		expect(result.warnings).toBeDefined();
+		expect(result.warnings).toEqual(
+			expect.arrayContaining([expect.stringMatching(/Auto-dropped 2 duplicate line\(s\) at the start of insert/)]),
 		);
 	});
 
@@ -324,6 +444,24 @@ describe("hashline executor", () => {
 		});
 	});
 
+	it("honors the pure-insert duplicate auto-drop setting", async () => {
+		await withTempDir(async tempDir => {
+			const filePath = path.join(tempDir, "a.ts");
+			const source = ["aaa", "bbb", "ccc"].join("\n");
+			const input = `@a.ts\n+ ${tag(2, "bbb")}\n${pl("aaa")}\n${pl("bbb")}\n${pl("NEW")}\n`;
+
+			await Bun.write(filePath, source);
+			await executeHashlineSingle(hashlineExecuteOptions(tempDir, input));
+			expect(await Bun.file(filePath).text()).toBe("aaa\nbbb\naaa\nbbb\nNEW\nccc");
+
+			await Bun.write(filePath, source);
+			const enabled = Settings.isolated({ "edit.hashlineAutoDropPureInsertDuplicates": true });
+			const result = await executeHashlineSingle(hashlineExecuteOptions(tempDir, input, enabled));
+			expect(await Bun.file(filePath).text()).toBe("aaa\nbbb\nNEW\nccc");
+			expect(result.content[0]?.type === "text" ? result.content[0].text : "").toContain("Auto-dropped");
+		});
+	});
+
 	it("preflights every section before writing multi-file edits", async () => {
 		await withTempDir(async tempDir => {
 			const aPath = path.join(tempDir, "a.ts");
@@ -339,6 +477,64 @@ describe("hashline executor", () => {
 			);
 			expect(await Bun.file(aPath).text()).toBe("aaa\n");
 			expect(await Bun.file(bPath).text()).toBe("bbb\n");
+		});
+	});
+
+	it("applies multiple sections targeting the same file against the original snapshot", async () => {
+		await withTempDir(async tempDir => {
+			const filePath = path.join(tempDir, "a.ts");
+			const original = ["L1", "L2", "L3", "L4", "L5", "L6", "L7", "L8", "L9", "L10"].join("\n");
+			await Bun.write(filePath, `${original}\n`);
+
+			// Two sections, both anchored against the ORIGINAL file. Section 1 expands
+			// line 2 into 9 lines (net +8 shift, beyond the ±5 anchor rebase window).
+			// Section 2's anchor points at line 8 of the original; after section 1
+			// applies, that content moves to line 16. A naive sequential apply reads
+			// the modified disk and fails anchor validation because rebase cannot
+			// span the 8-line gap.
+			const input = [
+				"@a.ts",
+				`= ${tag(2, "L2")}`,
+				pl("L2a"),
+				pl("L2b"),
+				pl("L2c"),
+				pl("L2d"),
+				pl("L2e"),
+				pl("L2f"),
+				pl("L2g"),
+				pl("L2h"),
+				pl("L2i"),
+				"@a.ts",
+				`+ ${tag(8, "L8")}`,
+				pl("INSERTED"),
+			].join("\n");
+
+			await executeHashlineSingle(hashlineExecuteOptions(tempDir, input));
+
+			expect(await Bun.file(filePath).text()).toBe(
+				[
+					"L1",
+					"L2a",
+					"L2b",
+					"L2c",
+					"L2d",
+					"L2e",
+					"L2f",
+					"L2g",
+					"L2h",
+					"L2i",
+					"L3",
+					"L4",
+					"L5",
+					"L6",
+					"L7",
+					"L8",
+					"INSERTED",
+					"L9",
+					"L10",
+					"",
+				].join("\n"),
+			);
 		});
 	});
 });

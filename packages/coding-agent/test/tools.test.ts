@@ -15,7 +15,7 @@ import { FindTool } from "@oh-my-pi/pi-coding-agent/tools/find";
 import { JobTool } from "@oh-my-pi/pi-coding-agent/tools/job";
 import { wrapToolWithMetaNotice } from "@oh-my-pi/pi-coding-agent/tools/output-meta";
 import { ReadTool } from "@oh-my-pi/pi-coding-agent/tools/read";
-import { SearchTool } from "@oh-my-pi/pi-coding-agent/tools/search";
+import { DEFAULT_MATCH_LIMIT, SearchTool } from "@oh-my-pi/pi-coding-agent/tools/search";
 import { WriteTool } from "@oh-my-pi/pi-coding-agent/tools/write";
 import * as markitUtils from "@oh-my-pi/pi-coding-agent/utils/markit";
 import { $which, Snowflake } from "@oh-my-pi/pi-utils";
@@ -29,6 +29,13 @@ function getTextOutput(result: any): string {
 			.map((c: any) => c.text)
 			.join("\n") || ""
 	);
+}
+
+function writeFileWithMtime(filePath: string, content: string, mtimeMs: number): void {
+	fs.mkdirSync(path.dirname(filePath), { recursive: true });
+	fs.writeFileSync(filePath, content);
+	const mtime = new Date(mtimeMs);
+	fs.utimesSync(filePath, mtime, mtime);
 }
 
 function createFifoOrSkip(fifoPath: string): boolean {
@@ -269,7 +276,7 @@ describe("Coding Agent Tools", () => {
 			expect(output).toContain("Line 2");
 			expect(output).toContain("Line 3");
 			// No truncation message since file fits within limits
-			expect(getTextOutput(result)).not.toContain("Use sel=");
+			expect(getTextOutput(result)).not.toContain("Use :");
 			expect(result.details?.truncation).toBeUndefined();
 		});
 
@@ -294,7 +301,7 @@ describe("Coding Agent Tools", () => {
 				content: "# Notebook Title\n\nNotebook body\n",
 			});
 
-			const result = await readTool.execute("test-call-ipynb", { path: notebookPath, sel: "raw" });
+			const result = await readTool.execute("test-call-ipynb", { path: `${notebookPath}:raw` });
 			const output = getTextOutput(result);
 
 			expect(convertSpy).toHaveBeenCalledTimes(1);
@@ -331,7 +338,7 @@ describe("Coding Agent Tools", () => {
 			expect(output).toContain("Line 1");
 			expect(output).toContain(`Line ${defaultLimit}`);
 			expect(output).not.toContain(`Line ${defaultLimit + 1}`);
-			expect(output).toContain(`[Showing lines 1-${defaultLimit} of 3500. Use sel=${defaultLimit + 1} to continue]`);
+			expect(output).toContain(`[Showing lines 1-${defaultLimit} of 3500. Use :${defaultLimit + 1} to continue]`);
 		});
 
 		it("should truncate when byte limit exceeded", async () => {
@@ -345,7 +352,7 @@ describe("Coding Agent Tools", () => {
 
 			expect(output).toContain("Line 1:");
 			// Should show byte limit message
-			expect(output).toMatch(/\[Showing lines 1-\d+ of 1000 \(\d+(\.\d+)?\s*KB limit\)\. Use sel=\d+ to continue\]/);
+			expect(output).toMatch(/\[Showing lines 1-\d+ of 1000 \(\d+(\.\d+)?\s*KB limit\)\. Use :\d+ to continue\]/);
 		});
 
 		it("should handle offset parameter", async () => {
@@ -353,14 +360,14 @@ describe("Coding Agent Tools", () => {
 			const lines = Array.from({ length: 100 }, (_, i) => `Line ${i + 1}`);
 			fs.writeFileSync(testFile, lines.join("\n"));
 
-			const result = await readTool.execute("test-call-5", { path: testFile, sel: "L51" });
+			const result = await readTool.execute("test-call-5", { path: `${testFile}:L51` });
 			const output = getTextOutput(result);
 
 			expect(output).not.toContain("Line 50");
 			expect(output).toContain("Line 51");
 			expect(output).toContain("Line 100");
 			// No truncation message since file fits within limits
-			expect(output).not.toContain("Use sel=");
+			expect(output).not.toContain("Use :");
 		});
 
 		it("should handle limit parameter", async () => {
@@ -368,13 +375,13 @@ describe("Coding Agent Tools", () => {
 			const lines = Array.from({ length: 100 }, (_, i) => `Line ${i + 1}`);
 			fs.writeFileSync(testFile, lines.join("\n"));
 
-			const result = await readTool.execute("test-call-6", { path: testFile, sel: "L1-L10" });
+			const result = await readTool.execute("test-call-6", { path: `${testFile}:L1-L10` });
 			const output = getTextOutput(result);
 
 			expect(output).toContain("Line 1");
 			expect(output).toContain("Line 10");
 			expect(output).not.toContain("Line 11");
-			expect(output).toContain("[Showing lines 1-10 of 100. Use sel=11 to continue]");
+			expect(output).toContain("[Showing lines 1-10 of 100. Use :11 to continue]");
 		});
 
 		it("should handle offset + limit together", async () => {
@@ -383,8 +390,7 @@ describe("Coding Agent Tools", () => {
 			fs.writeFileSync(testFile, lines.join("\n"));
 
 			const result = await readTool.execute("test-call-7", {
-				path: testFile,
-				sel: "L41-L60",
+				path: `${testFile}:L41-L60`,
 			});
 			const output = getTextOutput(result);
 
@@ -392,18 +398,18 @@ describe("Coding Agent Tools", () => {
 			expect(output).toContain("Line 41");
 			expect(output).toContain("Line 60");
 			expect(output).not.toContain("Line 61");
-			expect(output).toContain("[Showing lines 41-60 of 100. Use sel=61 to continue]");
+			expect(output).toContain("[Showing lines 41-60 of 100. Use :61 to continue]");
 		});
 
 		it("should show error when offset is beyond file length", async () => {
 			const testFile = path.join(testDir, "short.txt");
 			fs.writeFileSync(testFile, "Line 1\nLine 2\nLine 3");
 
-			const result = await readTool.execute("test-call-8", { path: testFile, sel: "L100" });
+			const result = await readTool.execute("test-call-8", { path: `${testFile}:L100` });
 			const output = getTextOutput(result);
 
 			expect(output).toContain("Line 100 is beyond end of file (3 lines total)");
-			expect(output).toContain("Use sel=1 to read from the start, or sel=3 to read the last line.");
+			expect(output).toContain("Use :1 to read from the start, or :3 to read the last line.");
 		});
 
 		it("should include truncation details when truncated", async () => {
@@ -420,6 +426,42 @@ describe("Coding Agent Tools", () => {
 			expect(result.details?.truncation?.truncatedBy).toBe("lines");
 			expect(result.details?.truncation?.totalLines).toBe(3500);
 			expect(result.details?.truncation?.outputLines).toBe(defaultLimit);
+		});
+
+		it("should render directories as a two-level tree without capping root entries", async () => {
+			const childDir = path.join(testDir, "child");
+			const base = Date.now() - 60_000;
+			fs.mkdirSync(childDir, { recursive: true });
+			writeFileWithMtime(path.join(testDir, ".hidden-root"), "hidden", base + 20_000);
+			writeFileWithMtime(path.join(testDir, ".DS_Store"), "mac metadata", base + 25_000);
+			writeFileWithMtime(path.join(testDir, "node_modules", "pkg", "index.js"), "ignored", base + 24_000);
+			for (let i = 0; i < 13; i += 1) {
+				const fileName = `root-${String(i).padStart(2, "0")}.txt`;
+				writeFileWithMtime(path.join(testDir, fileName), fileName, base + i);
+			}
+			for (let i = 0; i < 13; i += 1) {
+				const fileName = `child-${String(i).padStart(2, "0")}.txt`;
+				writeFileWithMtime(path.join(childDir, fileName), fileName, base + i);
+			}
+			writeFileWithMtime(path.join(childDir, "nested", "deep.txt"), "deep", base + 30_000);
+
+			const result = await readTool.execute("test-call-directory-tree", { path: testDir });
+			const output = getTextOutput(result);
+
+			expect(result.details?.isDirectory).toBe(true);
+			expect(output).toContain(".");
+			expect(output).toContain(".hidden-root");
+			expect(output).not.toContain(".DS_Store");
+			expect(output).not.toContain("node_modules");
+			expect(output).toContain("root-00.txt");
+			expect(output).toContain("root-01.txt");
+			expect(output).toContain("root-12.txt");
+			expect(output).toContain("child/");
+			expect(output).toContain("nested/");
+			expect(output).toContain("… 2 more");
+			expect(output).not.toContain("child-01.txt");
+			expect(output).toContain("child-00.txt");
+			expect(output).not.toContain("deep.txt");
 		});
 
 		it("should treat .tar archives like directories", async () => {
@@ -493,15 +535,14 @@ describe("Coding Agent Tools", () => {
 				);
 
 				const result = await readTool.execute("test-call-archive-subpath", {
-					path: `${archivePath}:pkg/README.md`,
-					sel: "L1-L2",
+					path: `${archivePath}:pkg/README.md:L1-L2`,
 				});
 				const output = getTextOutput(result);
 
 				expect(output).toContain("# Archive README");
 				expect(output).toContain("Line 2");
 				expect(output).not.toContain("Line 3");
-				expect(output).toContain("Use sel=3");
+				expect(output).toContain("Use :3");
 			});
 		}
 
@@ -1386,7 +1427,7 @@ function b() {
 			expect(result.details?.matchCount).toBe(1);
 		});
 		it("should apply the fixed default match cap", async () => {
-			const lines = Array.from({ length: 600 }, (_, i) => `needle ${i + 1}`);
+			const lines = Array.from({ length: DEFAULT_MATCH_LIMIT + 100 }, (_, i) => `needle ${i + 1}`);
 			fs.writeFileSync(path.join(testDir, "default-limit.txt"), lines.join("\n"));
 
 			const result = await searchTool.execute("test-call-14-default-limit", {
@@ -1395,9 +1436,9 @@ function b() {
 			});
 
 			const output = getTextOutput(result);
-			expect(output).toContain("Result limit reached; narrow paths or use skip=500.");
-			expect(result.details?.matchCount).toBe(500);
-			expect(result.details?.matchLimitReached).toBe(500);
+			expect(output).toContain(`Result limit reached; narrow paths or use skip=${DEFAULT_MATCH_LIMIT}.`);
+			expect(result.details?.matchCount).toBe(DEFAULT_MATCH_LIMIT);
+			expect(result.details?.matchLimitReached).toBe(DEFAULT_MATCH_LIMIT);
 		});
 	});
 

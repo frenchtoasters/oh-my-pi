@@ -13,7 +13,9 @@ import type { SkillsSettings } from "./config/settings";
 import { type ContextFile, loadCapability, type SystemPrompt as SystemPromptFile } from "./discovery";
 import { loadSkills, type Skill } from "./extensibility/skills";
 import customSystemPromptTemplate from "./prompts/system/custom-system-prompt.md" with { type: "text" };
+import projectPromptTemplate from "./prompts/system/project-prompt.md" with { type: "text" };
 import systemPromptTemplate from "./prompts/system/system-prompt.md" with { type: "text" };
+import { buildWorkspaceTree, type WorkspaceTree } from "./workspace-tree";
 
 interface AlwaysApplyRule {
 	name: string;
@@ -409,12 +411,20 @@ export interface BuildSystemPromptOptions {
 	secretsEnabled?: boolean;
 	/** Pre-loaded AGENTS.md search (skips discovery if provided). May be a Promise to allow early kick-off. */
 	agentsMdSearch?: AgentsMdSearch | Promise<AgentsMdSearch>;
+	/** Pre-loaded workspace tree (skips discovery if provided). May be a Promise to allow early kick-off. */
+	workspaceTree?: WorkspaceTree | Promise<WorkspaceTree>;
+}
+
+/** Result of building provider-facing system prompt messages. */
+export interface BuildSystemPromptResult {
+	/** Ordered system prompt blocks. Providers should preserve entries as distinct messages/blocks. */
+	systemPrompt: string[];
 }
 
 /** Build the system prompt with tools, guidelines, and context */
-export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}): Promise<string> {
+export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}): Promise<BuildSystemPromptResult> {
 	if ($env.NULL_PROMPT === "true") {
-		return "";
+		return { systemPrompt: [] };
 	}
 
 	const {
@@ -435,6 +445,7 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 		eagerTasks = false,
 		secretsEnabled = false,
 		agentsMdSearch: providedAgentsMdSearch,
+		workspaceTree: providedWorkspaceTree,
 	} = options;
 	const resolvedCwd = cwd ?? getProjectDir();
 
@@ -449,6 +460,10 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 			providedAgentsMdSearch !== undefined
 				? Promise.resolve(providedAgentsMdSearch)
 				: logger.time("buildAgentsMdSearch", buildAgentsMdSearch, resolvedCwd);
+		const workspaceTreePromise =
+			providedWorkspaceTree !== undefined
+				? Promise.resolve(providedWorkspaceTree)
+				: logger.time("buildWorkspaceTree", buildWorkspaceTree, resolvedCwd);
 		const skillsPromise: Promise<Skill[]> =
 			providedSkills !== undefined
 				? Promise.resolve(providedSkills)
@@ -463,6 +478,7 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 			contextFilesPromise,
 			agentsMdSearchPromise,
 			skillsPromise,
+			workspaceTreePromise,
 		]).then(
 			([
 				resolvedCustomPrompt,
@@ -471,6 +487,7 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 				contextFiles,
 				agentsMdSearch,
 				skills,
+				workspaceTree,
 			]) => ({
 				resolvedCustomPrompt,
 				resolvedAppendPrompt,
@@ -478,6 +495,7 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 				contextFiles,
 				agentsMdSearch,
 				skills,
+				workspaceTree,
 			}),
 		);
 	})();
@@ -500,6 +518,12 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 		limit: AGENTS_MD_LIMIT,
 		pattern: `AGENTS.md depth ${AGENTS_MD_MIN_DEPTH}-${AGENTS_MD_MAX_DEPTH}`,
 		files: [],
+	};
+	let workspaceTree: WorkspaceTree = {
+		rootPath: resolvedCwd,
+		rendered: "",
+		truncated: false,
+		totalLines: 0,
 	};
 	let skills: Skill[] = providedSkills ?? [];
 
@@ -524,6 +548,7 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 		contextFiles = dedupeExactContextFiles(prepResult.value.contextFiles);
 		agentsMdSearch = prepResult.value.agentsMdSearch;
 		skills = prepResult.value.skills;
+		workspaceTree = prepResult.value.workspaceTree;
 	}
 
 	const date = new Date().toISOString().slice(0, 10);
@@ -578,6 +603,7 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 		environment,
 		contextFiles,
 		agentsMdSearch,
+		workspaceTree,
 		skills: filteredSkills,
 		rules: rules ?? [],
 		alwaysApplyRules: injectedAlwaysApplyRules,
@@ -599,5 +625,11 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 		rendered += `\n\n<critical>\nThe \`${reportToolIssueToolName}\` tool is available for automated QA. If ANY tool you call returns output that is unexpected, incorrect, malformed, or otherwise inconsistent with what you anticipated given the tool's described behavior and your parameters, call \`${reportToolIssueToolName}\` with the tool name and a concise description of the discrepancy. Do not hesitate to report — false positives are acceptable.\n</critical>`;
 	}
 
-	return rendered;
+	const systemPrompt = [rendered];
+	const projectPrompt = resolvedCustomPrompt ? "" : prompt.render(projectPromptTemplate, data).trim();
+	if (projectPrompt) {
+		systemPrompt.push(projectPrompt);
+	}
+
+	return { systemPrompt };
 }

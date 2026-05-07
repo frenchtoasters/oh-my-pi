@@ -972,16 +972,18 @@ export async function runSubprocess(options: ExecutorOptions): Promise<SingleRes
 				skills: options.skills,
 				promptTemplates: options.promptTemplates,
 				systemPrompt: defaultPrompt => {
-					capturedStablePrefix = defaultPrompt;
-					return prompt.render(subagentSystemPromptTemplate, {
-						base: defaultPrompt,
-						agent: agent.systemPrompt,
-						worktree: worktree ?? "",
-						outputSchema: normalizedOutputSchema,
-						contextFile: options.contextFile,
-						ircPeers: ircEnabled ? renderIrcPeerRoster(id) : "",
-						ircSelfId: ircEnabled ? id : "",
-					});
+					capturedStablePrefix = defaultPrompt.join("\n\n");
+					return [
+						prompt.render(subagentSystemPromptTemplate, {
+							base: capturedStablePrefix,
+							agent: agent.systemPrompt,
+							worktree: worktree ?? "",
+							outputSchema: normalizedOutputSchema,
+							contextFile: options.contextFile,
+							ircPeers: ircEnabled ? renderIrcPeerRoster(id) : "",
+							ircSelfId: ircEnabled ? id : "",
+						}),
+					];
 				},
 				sessionManager,
 				hasUI: false,
@@ -1025,7 +1027,7 @@ export async function runSubprocess(options: ExecutorOptions): Promise<SingleRes
 			// The stable prefix (defaultPrompt / {{base}}) is identical across same-class
 			// subagents, enabling Anthropic's server-side KV cache reuse.
 			if (capturedStablePrefix) {
-				const fullPrompt = session.agent.state.systemPrompt;
+				const fullPrompt = session.agent.state.systemPrompt.join("\n\n");
 				if (fullPrompt.startsWith(capturedStablePrefix)) {
 					const dynamicSuffix = fullPrompt.slice(capturedStablePrefix.length);
 					session.agent.setSystemPromptBlocks({
@@ -1042,7 +1044,7 @@ export async function runSubprocess(options: ExecutorOptions): Promise<SingleRes
 			}
 
 			session.sessionManager.appendSessionInit({
-				systemPrompt: session.agent.state.systemPrompt,
+				systemPrompt: session.agent.state.systemPrompt.join("\n\n"),
 				task,
 				tools: session.getActiveToolNames(),
 				outputSchema,

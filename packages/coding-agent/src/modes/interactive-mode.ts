@@ -183,6 +183,7 @@ export class InteractiveMode implements InteractiveModeContext {
 	optimisticUserMessageSignature: string | undefined = undefined;
 	locallySubmittedUserSignatures: Set<string> = new Set();
 	#pendingSubmittedInput: SubmittedUserInput | undefined;
+	#pendingSubmissionDispose: (() => void) | undefined;
 	lastSigintTime = 0;
 	lastEscapeTime = 0;
 	shutdownRequested = false;
@@ -444,6 +445,20 @@ export class InteractiveMode implements InteractiveModeContext {
 		// Restore mode from session (e.g. plan mode on resume)
 		await this.#restoreModeFromSession();
 
+		// Restore unsent editor draft from previous session shutdown (Ctrl+D).
+		// One-shot: consumeDraft removes the sidecar after read so the next
+		// resume does not re-restore the same text.
+		try {
+			const draft = await this.sessionManager.consumeDraft();
+			if (draft && !this.editor.getText()) {
+				this.editor.setText(draft);
+				this.updateEditorBorderColor();
+				this.ui.requestRender();
+			}
+		} catch (err) {
+			logger.warn("Failed to restore session draft", { error: String(err) });
+		}
+
 		// Subscribe to agent events
 		this.#subscribeToAgent();
 
@@ -567,6 +582,30 @@ export class InteractiveMode implements InteractiveModeContext {
 		);
 	}
 
+	recordLocalSubmission(text: string, imageCount = 0): () => void {
+		if (this.isKnownSlashCommand(text)) {
+			return () => {};
+		}
+		const signature = `${text}\u0000${imageCount}`;
+		this.locallySubmittedUserSignatures.add(signature);
+		let disposed = false;
+		return () => {
+			if (disposed) return;
+			disposed = true;
+			this.locallySubmittedUserSignatures.delete(signature);
+		};
+	}
+
+	async withLocalSubmission<T>(text: string, fn: () => Promise<T>, options?: { imageCount?: number }): Promise<T> {
+		const dispose = this.recordLocalSubmission(text, options?.imageCount ?? 0);
+		try {
+			return await fn();
+		} catch (err) {
+			dispose();
+			throw err;
+		}
+	}
+
 	startPendingSubmission(input: { text: string; images?: ImageContent[] }): SubmittedUserInput {
 		const submission: SubmittedUserInput = {
 			text: input.text,
@@ -575,8 +614,9 @@ export class InteractiveMode implements InteractiveModeContext {
 			started: false,
 		};
 		this.#pendingSubmittedInput = submission;
-		this.optimisticUserMessageSignature = `${submission.text}\u0000${submission.images?.length ?? 0}`;
-		this.locallySubmittedUserSignatures.add(this.optimisticUserMessageSignature);
+		const imageCount = submission.images?.length ?? 0;
+		this.optimisticUserMessageSignature = `${submission.text}\u0000${imageCount}`;
+		this.#pendingSubmissionDispose = this.recordLocalSubmission(submission.text, imageCount);
 		this.addMessageToChat({
 			role: "user",
 			content: [{ type: "text", text: submission.text }, ...(submission.images ?? [])],
@@ -598,7 +638,8 @@ export class InteractiveMode implements InteractiveModeContext {
 		submission.cancelled = true;
 		this.#pendingSubmittedInput = undefined;
 		this.optimisticUserMessageSignature = undefined;
-		this.locallySubmittedUserSignatures.delete(`${submission.text}\u0000${submission.images?.length ?? 0}`);
+		this.#pendingSubmissionDispose?.();
+		this.#pendingSubmissionDispose = undefined;
 		this.#pendingWorkingMessage = undefined;
 		if (this.loadingAnimation) {
 			this.loadingAnimation.stop();
@@ -622,8 +663,22 @@ export class InteractiveMode implements InteractiveModeContext {
 	}
 
 	finishPendingSubmission(input: SubmittedUserInput): void {
-		if (this.#pendingSubmittedInput === input) {
+		const wasPendingSubmission = this.#pendingSubmittedInput === input;
+		const pendingSubmissionDispose = this.#pendingSubmissionDispose;
+		if (wasPendingSubmission) {
 			this.#pendingSubmittedInput = undefined;
+			this.#pendingSubmissionDispose = undefined;
+		}
+
+		if (wasPendingSubmission && !this.session.isStreaming && !this.streamingComponent) {
+			this.optimisticUserMessageSignature = undefined;
+			pendingSubmissionDispose?.();
+			this.#pendingWorkingMessage = undefined;
+			if (this.loadingAnimation) {
+				this.loadingAnimation.stop();
+				this.loadingAnimation = undefined;
+				this.statusContainer.clear();
+			}
 		}
 	}
 
@@ -815,6 +870,14 @@ export class InteractiveMode implements InteractiveModeContext {
 	/** Restore mode state from session entries on resume (e.g. plan mode). */
 	async #restoreModeFromSession(): Promise<void> {
 		const sessionContext = this.sessionManager.buildSessionContext();
+		if (!this.session.settings.get("plan.enabled")) {
+			// Clear stale plan/plan_paused mode so re-enabling the setting
+			// later doesn't unexpectedly restore an old plan session.
+			if (sessionContext.mode === "plan" || sessionContext.mode === "plan_paused") {
+				this.sessionManager.appendModeChange("none");
+			}
+			return;
+		}
 		if (sessionContext.mode === "plan") {
 			const planFilePath = sessionContext.modeData?.planFilePath as string | undefined;
 			await this.#enterPlanMode({ planFilePath });
@@ -1018,7 +1081,7 @@ export class InteractiveMode implements InteractiveModeContext {
 
 	async #approvePlan(
 		planContent: string,
-		options: { planFilePath: string; finalPlanFilePath: string },
+		options: { planFilePath: string; finalPlanFilePath: string; preserveContext?: boolean },
 	): Promise<void> {
 		await renameApprovedPlanFile({
 			planFilePath: options.planFilePath,
@@ -1028,26 +1091,30 @@ export class InteractiveMode implements InteractiveModeContext {
 		});
 		const previousTools = this.#planModePreviousTools ?? this.session.getActiveToolNames();
 		await this.#exitPlanMode({ silent: true, paused: false });
-		await this.handleClearCommand();
-		// The new session has a fresh local:// root — persist the approved plan there
-		// so `local://<title>.md` resolves correctly in the execution session.
-		const newLocalPath = resolveLocalUrlToPath(options.finalPlanFilePath, {
-			getArtifactsDir: () => this.sessionManager.getArtifactsDir(),
-			getSessionId: () => this.sessionManager.getSessionId(),
-		});
-		await Bun.write(newLocalPath, planContent);
-		// Persist approved plan to .plans/ for project-level access
-		try {
-			const projectDir = this.sessionManager.getCwd();
-			const plansDir = path.join(projectDir, ".plans");
-			const planFileName = options.finalPlanFilePath.replace(/^local:\/\//, "");
-			const planDestination = path.join(plansDir, planFileName);
-			await Bun.write(planDestination, planContent);
-		} catch (error) {
-			// Log but don't fail — the local:// copy is the primary artifact
-			logger.warn("Failed to persist plan to .plans/ directory", {
-				error: error instanceof Error ? error.message : String(error),
+		if (!options.preserveContext) {
+			await this.handleClearCommand();
+			// The new session has a fresh local:// root — persist the approved plan there
+			// so `local://<title>.md` resolves correctly in the execution session.
+			const newLocalPath = resolveLocalUrlToPath(options.finalPlanFilePath, {
+				getArtifactsDir: () => this.sessionManager.getArtifactsDir(),
+				getSessionId: () => this.sessionManager.getSessionId(),
 			});
+			await Bun.write(newLocalPath, planContent);
+			// Persist approved plan to .plans/ for project-level access
+			try {
+				const projectDir = this.sessionManager.getCwd();
+				const plansDir = path.join(projectDir, ".plans");
+				const planFileName = path.basename(options.finalPlanFilePath.replace(/^local:\/\//, ""));
+				if (!planFileName) throw new Error("Empty plan filename");
+				const planDestination = path.join(plansDir, planFileName);
+				await fs.mkdir(plansDir, { recursive: true });
+				await Bun.write(planDestination, planContent);
+			} catch (error) {
+				// Log but don't fail — the local:// copy is the primary artifact
+				logger.warn("Failed to persist plan to .plans/ directory", {
+					error: error instanceof Error ? error.message : String(error),
+				});
+			}
 		}
 		if (previousTools.length > 0) {
 			await this.session.setActiveToolsByName(previousTools);
@@ -1057,6 +1124,7 @@ export class InteractiveMode implements InteractiveModeContext {
 		const planModePrompt = prompt.render(planModeApprovedPrompt, {
 			planContent,
 			finalPlanFilePath: options.finalPlanFilePath,
+			contextPreserved: options.preserveContext === true,
 		});
 		await this.session.prompt(planModePrompt, { synthetic: true });
 	}
@@ -1069,6 +1137,10 @@ export class InteractiveMode implements InteractiveModeContext {
 			);
 			if (!confirmed) return;
 			await this.#exitPlanMode({ paused: true });
+			return;
+		}
+		if (!this.session.settings.get("plan.enabled")) {
+			this.showWarning("Plan mode is disabled. Enable it in settings (plan.enabled).");
 			return;
 		}
 		await this.#enterPlanMode();
@@ -1100,14 +1172,14 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.#renderPlanPreview(planContent);
 		const choice = await this.showHookSelector(
 			"Plan mode - next step",
-			["Approve and execute", "Refine plan", "Stay in plan mode"],
+			["Approve and execute", "Approve and keep context", "Refine plan", "Stay in plan mode"],
 			{
 				helpText: this.#getPlanReviewHelpText(),
 				onExternalEditor: () => void this.#openPlanInExternalEditor(planFilePath),
 			},
 		);
 
-		if (choice === "Approve and execute") {
+		if (choice === "Approve and execute" || choice === "Approve and keep context") {
 			const finalPlanFilePath = details.finalPlanFilePath || planFilePath;
 			try {
 				const latestPlanContent = await this.#readPlanFile(planFilePath);
@@ -1115,7 +1187,11 @@ export class InteractiveMode implements InteractiveModeContext {
 					this.showError(`Plan file not found at ${planFilePath}`);
 					return;
 				}
-				await this.#approvePlan(latestPlanContent, { planFilePath, finalPlanFilePath });
+				await this.#approvePlan(latestPlanContent, {
+					planFilePath,
+					finalPlanFilePath,
+					preserveContext: choice === "Approve and keep context",
+				});
 			} catch (error) {
 				this.showError(
 					`Failed to finalize approved plan: ${error instanceof Error ? error.message : String(error)}`,
@@ -1174,8 +1250,18 @@ export class InteractiveMode implements InteractiveModeContext {
 		if (this.#isShuttingDown) return;
 		this.#isShuttingDown = true;
 
+		// Snapshot the editor before any teardown empties it. Persisting the draft
+		// here covers Ctrl+D shutdown with non-empty text; for /exit the editor is
+		// already cleared so saveDraft("") just removes any stale sidecar.
+		const draftText = this.editor.getText();
+
 		// Flush pending session writes before shutdown
 		await this.sessionManager.flush();
+		try {
+			await this.sessionManager.saveDraft(draftText);
+		} catch (err) {
+			logger.warn("Failed to save session draft", { error: String(err) });
+		}
 		this.#btwController.dispose();
 
 		// Emit shutdown event to hooks
@@ -1236,6 +1322,8 @@ export class InteractiveMode implements InteractiveModeContext {
 	showError(message: string): void {
 		this.#pendingSubmittedInput = undefined;
 		this.optimisticUserMessageSignature = undefined;
+		this.#pendingSubmissionDispose?.();
+		this.#pendingSubmissionDispose = undefined;
 		this.#pendingWorkingMessage = undefined;
 		if (this.loadingAnimation) {
 			this.loadingAnimation.stop();
