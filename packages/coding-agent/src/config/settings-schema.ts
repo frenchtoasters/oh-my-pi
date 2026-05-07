@@ -2538,7 +2538,6 @@ export const SETTINGS_SCHEMA = {
 			description: "Consecutive auth failures before stopping the action",
 		},
 	},
-
 } as const;
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2779,6 +2778,5 @@ export interface SecuritySettings {
 	tlsRejectUnauthorized: boolean;
 	maxAuthFailures: number;
 }
-
 
 export type GroupPrefix = keyof GroupTypeMap;

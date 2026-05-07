@@ -1,5 +1,4 @@
 import { ThinkingLevel } from "@oh-my-pi/pi-agent-core";
-import { getOAuthProviders } from "@oh-my-pi/pi-ai/utils/oauth";
 import type { OAuthProvider } from "@oh-my-pi/pi-ai/utils/oauth/types";
 import type { Component, OverlayHandle } from "@oh-my-pi/pi-tui";
 import { Input, Loader, Spacer, Text } from "@oh-my-pi/pi-tui";
@@ -36,7 +35,6 @@ import { AssistantMessageComponent } from "../components/assistant-message";
 import { ExtensionDashboard } from "../components/extensions";
 import { HistorySearchComponent } from "../components/history-search";
 import { ModelSelectorComponent } from "../components/model-selector";
-import { OAuthSelectorComponent } from "../components/oauth-selector";
 import { PluginSelectorComponent } from "../components/plugin-selector";
 import { SessionObserverOverlayComponent } from "../components/session-observer-overlay";
 import { SessionSelectorComponent } from "../components/session-selector";
@@ -46,29 +44,9 @@ import { TreeSelectorComponent } from "../components/tree-selector";
 import { UserMessageSelectorComponent } from "../components/user-message-selector";
 import type { SessionObserverRegistry } from "../session-observer-registry";
 
-const CALLBACK_SERVER_PROVIDERS = new Set<OAuthProvider>([
-	"anthropic",
-	"openai-codex",
-	"gitlab-duo",
-	"google-gemini-cli",
-	"google-antigravity",
-]);
-
-const MANUAL_LOGIN_TIP = "Tip: You can complete pairing with /login <redirect URL>.";
-
 export class SelectorController {
 	constructor(private ctx: InteractiveModeContext) {}
 
-	async #refreshOAuthProviderAuthState(): Promise<void> {
-		const oauthProviders = getOAuthProviders();
-		await Promise.all(
-			oauthProviders.map(provider =>
-				this.ctx.session.modelRegistry
-					.getApiKeyForProvider(provider.id, this.ctx.session.sessionId)
-					.catch(() => undefined),
-			),
-		);
-	}
 	/**
 	 * Shows a selector component in place of the editor.
 	 * @param create Factory that receives a `done` callback and returns the component and focus target
@@ -832,8 +810,6 @@ export class SelectorController {
 
 	async #handleOAuthLogin(providerId: string): Promise<void> {
 		this.ctx.showStatus(`Logging in to ${providerId}…`);
-		const manualInput = this.ctx.oauthManualInput;
-		const useManualInput = CALLBACK_SERVER_PROVIDERS.has(providerId as OAuthProvider);
 		try {
 			await this.ctx.session.modelRegistry.authStorage.login(providerId as OAuthProvider, {
 				onAuth: (info: { url: string; instructions?: string }) => {
@@ -845,10 +821,7 @@ export class SelectorController {
 						this.ctx.chatContainer.addChild(new Spacer(1));
 						this.ctx.chatContainer.addChild(new Text(theme.fg("warning", info.instructions), 1, 0));
 					}
-					if (useManualInput) {
-						this.ctx.chatContainer.addChild(new Spacer(1));
-						this.ctx.chatContainer.addChild(new Text(theme.fg("dim", MANUAL_LOGIN_TIP), 1, 0));
-					}
+
 					this.ctx.ui.requestRender();
 					this.ctx.openInBrowser(info.url);
 				},
@@ -878,7 +851,7 @@ export class SelectorController {
 					this.ctx.chatContainer.addChild(new Text(theme.fg("dim", message), 1, 0));
 					this.ctx.ui.requestRender();
 				},
-				onManualCodeInput: useManualInput ? () => manualInput.waitForInput(providerId) : undefined,
+				onManualCodeInput: undefined,
 			});
 			await this.ctx.session.modelRegistry.refresh();
 			this.ctx.chatContainer.addChild(new Spacer(1));
@@ -889,10 +862,6 @@ export class SelectorController {
 			this.ctx.ui.requestRender();
 		} catch (error: unknown) {
 			this.ctx.showError(`Login failed: ${error instanceof Error ? error.message : String(error)}`);
-		} finally {
-			if (useManualInput) {
-				manualInput.clear(`Manual OAuth input cleared for ${providerId}`);
-			}
 		}
 	}
 
@@ -916,59 +885,31 @@ export class SelectorController {
 	async showOAuthSelector(mode: "login" | "logout", providerId?: string): Promise<void> {
 		if (providerId) {
 			if (mode === "login") {
+				if (providerId !== "litellm") {
+					this.ctx.showWarning(
+						"Only LiteLLM provider login is supported. Configure other providers via LITELLM_BASE_URL environment variable.",
+					);
+					return;
+				}
 				await this.#handleOAuthLogin(providerId);
 			} else {
+				if (providerId !== "litellm") {
+					this.ctx.showWarning("Only LiteLLM provider logout is supported.");
+					return;
+				}
 				await this.#handleOAuthLogout(providerId);
 			}
 			return;
 		}
 
-		if (mode === "logout") {
-			await this.#refreshOAuthProviderAuthState();
-			const oauthProviders = getOAuthProviders();
-			const loggedInProviders = oauthProviders.filter(provider =>
-				this.ctx.session.modelRegistry.authStorage.hasAuth(provider.id),
-			);
-			if (loggedInProviders.length === 0) {
-				this.ctx.showStatus("No OAuth providers logged in. Use /login first.");
-				return;
-			}
+		if (mode === "login") {
+			// Directly login to litellm — no provider selector needed
+			await this.#handleOAuthLogin("litellm");
+			return;
 		}
 
-		this.showSelector(done => {
-			let selector: OAuthSelectorComponent;
-			selector = new OAuthSelectorComponent(
-				mode,
-				this.ctx.session.modelRegistry.authStorage,
-				async (selectedProviderId: string) => {
-					selector.stopValidation();
-					done();
-					if (mode === "login") {
-						await this.#handleOAuthLogin(selectedProviderId);
-					} else {
-						await this.#handleOAuthLogout(selectedProviderId);
-					}
-				},
-				() => {
-					selector.stopValidation();
-					done();
-					this.ctx.ui.requestRender();
-				},
-				{
-					validateAuth: async (selectedProviderId: string) => {
-						const apiKey = await this.ctx.session.modelRegistry.getApiKeyForProvider(
-							selectedProviderId,
-							this.ctx.session.sessionId,
-						);
-						return !!apiKey;
-					},
-					requestRender: () => {
-						this.ctx.ui.requestRender();
-					},
-				},
-			);
-			return { component: selector, focus: selector };
-		});
+		// Logout mode: directly logout from litellm
+		await this.#handleOAuthLogout("litellm");
 	}
 
 	showDebugSelector(): void {

@@ -1,6 +1,6 @@
 /**
- * Structured security event logger for NIST AU-2 (Audit Events) and
- * AU-3 (Content of Audit Records) compliance.
+ * Structured security event logger for NIST AU-2 (Audit Events),
+ * AU-3 (Content of Audit Records), and AU-12.1 (Session Correlation) compliance.
  *
  * Writes append-only JSONL audit logs to ~/.omp/logs/audit.YYYY-MM-DD.log
  * with 0o600 permissions and a SHA-256 hash chain for tamper detection.
@@ -43,6 +43,8 @@ export interface SecurityEvent {
 	metadata?: Record<string, unknown>;
 	/** SHA-256 hex of the previous line (genesis seed for first entry) */
 	prevHash?: string;
+	/** AU-12.1: cross-session correlation ID */
+	sessionId?: string;
 }
 
 // =============================================================================
@@ -55,6 +57,29 @@ function sha256(data: string): string {
 
 /** Stable genesis hash — matches CryptoParams.hashChain.genesisSeed */
 const GENESIS_HASH = sha256("omp-audit-genesis-v1");
+// =============================================================================
+// Session ID state (AU-12.1 correlation)
+// =============================================================================
+
+let currentSessionId: string | undefined;
+
+/**
+ * Sets the module-level session ID appended to all subsequent audit events.
+ * AU-12.1: enables cross-session correlation of audit records.
+ */
+export function setAuditSessionId(id: string): void {
+	currentSessionId = id;
+}
+
+/** Returns the currently active session ID, if any. */
+export function getAuditSessionId(): string | undefined {
+	return currentSessionId;
+}
+
+/** Clears the module-level session ID. Use during session teardown or in tests. */
+export function clearAuditSessionId(): void {
+	currentSessionId = undefined;
+}
 
 function todayIso(): string {
 	return new Date().toISOString().slice(0, 10);
@@ -120,6 +145,11 @@ export class SecurityAuditLogger {
 	/**
 	 * Emits a security event synchronously.  Returns the completed event
 	 * including the assigned eventId, timestamp, and prevHash.
+	 *
+	 * Note: The `metadata.pid` field is always set to `process.pid` regardless of
+	 * caller-supplied metadata (system-enforced). The `sessionId` field is always
+	 * set from the module-level session ID when available (AU-12.1 correlation).
+	 * These fields are intentionally non-overridable to preserve audit integrity.
 	 */
 	emit(event: Omit<SecurityEvent, "eventId" | "timestamp" | "prevHash">): SecurityEvent {
 		this.#ensureOpen();
@@ -129,6 +159,11 @@ export class SecurityAuditLogger {
 			eventId: crypto.randomUUID(),
 			timestamp: new Date().toISOString(),
 			prevHash: this.#lastHash,
+			...(currentSessionId !== undefined ? { sessionId: currentSessionId } : {}),
+			metadata: {
+				...event.metadata,
+				pid: process.pid,
+			},
 		};
 
 		const line = `${JSON.stringify(full)}\n`;

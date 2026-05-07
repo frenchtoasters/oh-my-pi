@@ -1,4 +1,3 @@
-import { getOAuthProviders } from "@oh-my-pi/pi-ai/utils/oauth";
 import type { SettingPath, SettingValue } from "../config/settings";
 import { settings } from "../config/settings";
 import {
@@ -404,57 +403,59 @@ const BUILTIN_SLASH_COMMAND_REGISTRY: ReadonlyArray<BuiltinSlashCommandSpec> = [
 	},
 	{
 		name: "login",
-		description: "Login with OAuth provider",
-		inlineHint: "[provider|redirect URL]",
+		description: "Login to LiteLLM provider",
+		inlineHint: "[redirect URL]",
 		allowArgs: true,
 		handle: (command, runtime) => {
 			const manualInput = runtime.ctx.oauthManualInput;
 			const args = command.args.trim();
 			if (args.length > 0) {
-				const matchedProvider = getOAuthProviders().find(provider => provider.id === args);
-				if (matchedProvider) {
+				if (args === "litellm") {
 					if (manualInput.hasPending()) {
-						const pendingProvider = manualInput.pendingProviderId;
-						const message = pendingProvider
-							? `OAuth login already in progress for ${pendingProvider}. Paste the redirect URL with /login <url>.`
-							: "OAuth login already in progress. Paste the redirect URL with /login <url>.";
-						runtime.ctx.showWarning(message);
+						runtime.ctx.showWarning(
+							"OAuth login already in progress for litellm. Paste the redirect URL with /login <url>.",
+						);
 						runtime.ctx.editor.setText("");
 						return;
 					}
-					void runtime.ctx.showOAuthSelector("login", matchedProvider.id);
+					void runtime.ctx.showOAuthSelector("login", "litellm");
 					runtime.ctx.editor.setText("");
 					return;
 				}
-				const submitted = manualInput.submit(args);
-				if (submitted) {
-					runtime.ctx.showStatus("OAuth callback received; completing login…");
-				} else {
-					runtime.ctx.showWarning("No OAuth login is waiting for a manual callback.");
+				if (args.includes("://")) {
+					const submitted = manualInput.submit(args);
+					if (submitted) {
+						runtime.ctx.showStatus("OAuth callback received; completing login\u2026");
+					} else {
+						runtime.ctx.showWarning("No OAuth login is waiting for a manual callback.");
+					}
+					runtime.ctx.editor.setText("");
+					return;
 				}
+				runtime.ctx.showWarning(
+					"Only LiteLLM provider login is supported. Configure other providers via LITELLM_BASE_URL environment variable.",
+				);
 				runtime.ctx.editor.setText("");
 				return;
 			}
 
 			if (manualInput.hasPending()) {
-				const provider = manualInput.pendingProviderId;
-				const message = provider
-					? `OAuth login already in progress for ${provider}. Paste the redirect URL with /login <url>.`
-					: "OAuth login already in progress. Paste the redirect URL with /login <url>.";
-				runtime.ctx.showWarning(message);
+				runtime.ctx.showWarning(
+					"OAuth login already in progress for litellm. Paste the redirect URL with /login <url>.",
+				);
 				runtime.ctx.editor.setText("");
 				return;
 			}
 
-			void runtime.ctx.showOAuthSelector("login");
+			void runtime.ctx.showOAuthSelector("login", "litellm");
 			runtime.ctx.editor.setText("");
 		},
 	},
 	{
 		name: "logout",
-		description: "Logout from OAuth provider",
+		description: "Logout from LiteLLM provider",
 		handle: (_command, runtime) => {
-			void runtime.ctx.showOAuthSelector("logout");
+			void runtime.ctx.showOAuthSelector("logout", "litellm");
 			runtime.ctx.editor.setText("");
 		},
 	},

@@ -17,7 +17,6 @@ export * from "./hook-selector";
 export * from "./keybinding-hints";
 export * from "./login-dialog";
 export * from "./model-selector";
-export * from "./oauth-selector";
 export * from "./queue-mode-selector";
 export * from "./read-tool-group";
 export * from "./session-selector";

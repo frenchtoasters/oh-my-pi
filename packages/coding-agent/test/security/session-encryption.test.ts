@@ -3,11 +3,25 @@ import * as crypto from "node:crypto";
 import * as securityAudit from "@oh-my-pi/pi-utils";
 import { SessionEncryption } from "../../src/security/session-encryption";
 
-vi.spyOn(securityAudit, "emitSecurityEvent").mockReturnValue({ eventId: "", timestamp: "", eventType: securityAudit.SecurityEventType.AUTH_SUCCESS, actor: "", resource: "", outcome: "success" });
+vi.spyOn(securityAudit, "emitSecurityEvent").mockReturnValue({
+	eventId: "",
+	timestamp: "",
+	eventType: securityAudit.SecurityEventType.AUTH_SUCCESS,
+	actor: "",
+	resource: "",
+	outcome: "success",
+});
 
 describe("SessionEncryption", () => {
 	beforeEach(() => {
-		vi.spyOn(securityAudit, "emitSecurityEvent").mockReturnValue({ eventId: "", timestamp: "", eventType: securityAudit.SecurityEventType.AUTH_SUCCESS, actor: "", resource: "", outcome: "success" });
+		vi.spyOn(securityAudit, "emitSecurityEvent").mockReturnValue({
+			eventId: "",
+			timestamp: "",
+			eventType: securityAudit.SecurityEventType.AUTH_SUCCESS,
+			actor: "",
+			resource: "",
+			outcome: "success",
+		});
 	});
 
 	it("isReady returns false before initialization", () => {

@@ -5,12 +5,26 @@ import { computeConfigHash, verifyConfigIntegrity } from "../../src/security/con
 import { ExecutionPolicy } from "../../src/security/execution-policy";
 import { SessionEncryption } from "../../src/security/session-encryption";
 
-vi.spyOn(securityAudit, "emitSecurityEvent").mockReturnValue({ eventId: "", timestamp: "", eventType: securityAudit.SecurityEventType.AUTH_SUCCESS, actor: "", resource: "", outcome: "success" });
+vi.spyOn(securityAudit, "emitSecurityEvent").mockReturnValue({
+	eventId: "",
+	timestamp: "",
+	eventType: securityAudit.SecurityEventType.AUTH_SUCCESS,
+	actor: "",
+	resource: "",
+	outcome: "success",
+});
 vi.spyOn(securityAudit, "getConfigRootDir").mockReturnValue("/nonexistent-baseline-dir-security-controls");
 
 describe("SA-11 Security Controls — Attack Scenarios", () => {
 	beforeEach(() => {
-		vi.spyOn(securityAudit, "emitSecurityEvent").mockReturnValue({ eventId: "", timestamp: "", eventType: securityAudit.SecurityEventType.AUTH_SUCCESS, actor: "", resource: "", outcome: "success" });
+		vi.spyOn(securityAudit, "emitSecurityEvent").mockReturnValue({
+			eventId: "",
+			timestamp: "",
+			eventType: securityAudit.SecurityEventType.AUTH_SUCCESS,
+			actor: "",
+			resource: "",
+			outcome: "success",
+		});
 		vi.spyOn(securityAudit, "getConfigRootDir").mockReturnValue("/nonexistent-baseline-dir-security-controls");
 	});
 

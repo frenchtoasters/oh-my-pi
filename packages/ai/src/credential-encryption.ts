@@ -38,6 +38,7 @@ export class CredentialEncryptionError extends Error {
 export class CredentialEncryption {
 	#masterKey: Buffer | null = null;
 	#salt: Buffer | null = null;
+	#disposed = false;
 	#serviceName = "oh-my-pi-credential-store";
 	#accountName: string;
 
@@ -50,6 +51,10 @@ export class CredentialEncryption {
 	 * from the OS keychain. Returns true if encryption is available.
 	 */
 	async initialize(): Promise<boolean> {
+		if (this.#disposed) {
+			throw new CredentialEncryptionError("Cannot re-initialize a disposed instance", "KEYCHAIN_UNAVAILABLE");
+		}
+
 		try {
 			let keyMaterial = await this.#loadFromKeychain();
 
@@ -68,6 +73,7 @@ export class CredentialEncryption {
 			this.#salt = crypto.createHash("sha256").update(saltInput).digest();
 
 			this.#masterKey = this.#deriveKey(keyMaterial, this.#salt);
+			keyMaterial.fill(0);
 			return true;
 		} catch (err) {
 			logger.error("[CredentialEncryption] Initialization failed", { err });
@@ -80,6 +86,9 @@ export class CredentialEncryption {
 	 * Layout: IV (12 bytes) | authTag (16 bytes) | ciphertext
 	 */
 	encrypt(plaintext: string): string {
+		if (this.#disposed) {
+			throw new CredentialEncryptionError("Instance has been disposed — cannot encrypt", "KEYCHAIN_UNAVAILABLE");
+		}
 		if (this.#masterKey === null) {
 			throw new CredentialEncryptionError(
 				"Encryption unavailable: keychain not initialized",
@@ -111,6 +120,9 @@ export class CredentialEncryption {
 	 * Decrypts a credential value from base64-encoded ciphertext.
 	 */
 	decrypt(encrypted: string): string {
+		if (this.#disposed) {
+			throw new CredentialEncryptionError("Instance has been disposed — cannot decrypt", "KEYCHAIN_UNAVAILABLE");
+		}
 		if (this.#masterKey === null) {
 			throw new CredentialEncryptionError(
 				"Decryption unavailable: keychain not initialized",
@@ -146,6 +158,27 @@ export class CredentialEncryption {
 	/** Returns true if the master key is loaded and encryption is ready. */
 	isAvailable(): boolean {
 		return this.#masterKey !== null;
+	}
+
+	/** Returns true if this instance has been disposed via dispose(). */
+	isDisposed(): boolean {
+		return this.#disposed;
+	}
+
+	/**
+	 * Zero-fills the master key and salt buffers for secure memory cleanup (SC-4).
+	 * After calling dispose(), the instance is no longer usable for encryption or decryption.
+	 */
+	dispose(): void {
+		if (this.#masterKey !== null) {
+			this.#masterKey.fill(0);
+			this.#masterKey = null;
+		}
+		if (this.#salt !== null) {
+			this.#salt.fill(0);
+			this.#salt = null;
+		}
+		this.#disposed = true;
 	}
 
 	// ─── Private ───────────────────────────────────────────────────────────────

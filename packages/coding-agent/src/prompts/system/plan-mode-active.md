@@ -102,14 +102,12 @@ You **MUST** ask questions throughout. You **MUST NOT** make large assumptions a
 </directives>
 
 {{#if planModeSkills.length}}
-
 ## Planning Skills
 
 {{#each planModeSkills}}
 ### {{name}}
 
 {{content}}
-
 {{/each}}
 {{/if}}
 

@@ -1,6 +1,8 @@
 export { abortableSleep, createAbortableStream, once, untilAborted } from "./abortable";
 export * from "./async";
+export * from "./audit-capacity";
 export * from "./audit-integrity";
+export * from "./audit-report";
 export * from "./color";
 export * from "./dirs";
 export * from "./env";

@@ -60,7 +60,7 @@ describe("/login slash command", () => {
 		expect(await pending).toBe(callbackUrl);
 	});
 
-	it("opens selector when no args are provided", async () => {
+	it("opens selector for litellm when no args are provided", async () => {
 		const manualInput = new OAuthManualInputManager();
 		const harness = createRuntimeHarness(manualInput);
 
@@ -68,28 +68,20 @@ describe("/login slash command", () => {
 
 		expect(handled).toBe(true);
 		expect(harness.getSelectorMode()).toBe("login");
+		expect(harness.getSelectorProvider()).toBe("litellm");
 	});
 
-	it("routes /login kagi to direct provider login", async () => {
+	it("shows warning for non-litellm provider login", async () => {
 		const manualInput = new OAuthManualInputManager();
 		const harness = createRuntimeHarness(manualInput);
 
 		const handled = await executeBuiltinSlashCommand("/login kagi", harness.runtime);
 
 		expect(handled).toBe(true);
-		expect(harness.getSelectorMode()).toBe("login");
-		expect(harness.getSelectorProvider()).toBe("kagi");
-	});
-
-	it("routes /login parallel to direct provider login", async () => {
-		const manualInput = new OAuthManualInputManager();
-		const harness = createRuntimeHarness(manualInput);
-
-		const handled = await executeBuiltinSlashCommand("/login parallel", harness.runtime);
-
-		expect(handled).toBe(true);
-		expect(harness.getSelectorMode()).toBe("login");
-		expect(harness.getSelectorProvider()).toBe("parallel");
+		expect(harness.getSelectorMode()).toBeUndefined();
+		expect(harness.getWarning()).toBe(
+			"Only LiteLLM provider login is supported. Configure other providers via LITELLM_BASE_URL environment variable.",
+		);
 	});
 
 	it("warns when no pending login exists for manual callback", async () => {

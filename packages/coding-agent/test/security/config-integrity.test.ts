@@ -10,7 +10,14 @@ import {
 	verifyConfigIntegrity,
 } from "../../src/security/config-integrity";
 
-vi.spyOn(piUtils, "emitSecurityEvent").mockReturnValue({ eventId: "", timestamp: "", eventType: piUtils.SecurityEventType.AUTH_SUCCESS, actor: "", resource: "", outcome: "success" });
+vi.spyOn(piUtils, "emitSecurityEvent").mockReturnValue({
+	eventId: "",
+	timestamp: "",
+	eventType: piUtils.SecurityEventType.AUTH_SUCCESS,
+	actor: "",
+	resource: "",
+	outcome: "success",
+});
 
 describe("config-integrity", () => {
 	let tmpDir: string;

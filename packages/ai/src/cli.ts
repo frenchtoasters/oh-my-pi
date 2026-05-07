@@ -2,346 +2,80 @@
 import * as readline from "node:readline";
 import { AuthCredentialStore } from "./auth-storage";
 import { getOAuthProviders } from "./utils/oauth";
-import type { OAuthCredentials, OAuthProvider } from "./utils/oauth/types";
 
 const PROVIDERS = getOAuthProviders();
 
-function prompt(rl: readline.Interface, question: string): Promise<string> {
-	const { promise, resolve, reject } = Promise.withResolvers<string>();
-	const input = process.stdin as NodeJS.ReadStream;
-	const supportsRawMode = input.isTTY && typeof input.setRawMode === "function";
-	const wasRaw = supportsRawMode ? input.isRaw : false;
-	let settled = false;
+async function maskedPrompt(question: string): Promise<string> {
+	const { stdin, stdout } = process;
+	stdout.write(`${question} `);
 
-	const cleanup = () => {
-		rl.off("SIGINT", onSigint);
-		if (supportsRawMode) {
-			input.off("keypress", onKeypress);
-			input.setRawMode?.(wasRaw);
-		}
-	};
-
-	const finish = (result: () => void) => {
-		if (settled) return;
-		settled = true;
-		cleanup();
-		result();
-	};
-
-	const cancel = () => {
-		finish(() => reject(new Error("Login cancelled")));
-	};
-
-	const onSigint = () => {
-		cancel();
-	};
-
-	const onKeypress = (_str: string, key: readline.Key) => {
-		if (key.name === "escape" || (key.ctrl && key.name === "c")) {
-			cancel();
-			rl.close();
-		}
-	};
-
-	if (supportsRawMode) {
-		readline.emitKeypressEvents(input, rl);
-		input.setRawMode(true);
-		input.on("keypress", onKeypress);
+	if (!stdin.isTTY) {
+		// Non-interactive: fall back to reading a line from stdin
+		const rl = readline.createInterface({ input: stdin, output: stdout });
+		const line = await new Promise<string>(resolve => rl.question("", resolve));
+		rl.close();
+		return line;
 	}
 
-	rl.once("SIGINT", onSigint);
-	rl.question(question, answer => {
-		finish(() => resolve(answer));
-	});
+	const { promise, resolve } = Promise.withResolvers<string>();
+	const raw = stdin.isRaw;
+	stdin.setRawMode(true);
+	stdin.resume();
+
+	let input = "";
+	const onData = (buf: Buffer) => {
+		const ch = buf.toString("utf8");
+		for (const c of ch) {
+			if (c === "\r" || c === "\n") {
+				stdout.write("\n");
+				stdin.setRawMode(raw);
+				stdin.pause();
+				stdin.removeListener("data", onData);
+				resolve(input);
+				return;
+			}
+			if (c === "\x03") {
+				// Ctrl+C
+				stdout.write("\n");
+				stdin.setRawMode(raw);
+				stdin.pause();
+				stdin.removeListener("data", onData);
+				resolve("");
+				return;
+			}
+			if (c === "\x7f" || c === "\b") {
+				// Backspace
+				if (input.length > 0) {
+					input = input.slice(0, -1);
+					stdout.write("\b \b");
+				}
+			} else if (c >= " ") {
+				input += c;
+				stdout.write("*");
+			}
+		}
+	};
+	stdin.on("data", onData);
 	return promise;
 }
 
-async function login(provider: OAuthProvider): Promise<void> {
-	const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-
-	const promptFn = (msg: string) => prompt(rl, `${msg} `);
+/**
+ * Authenticate with the given provider. Currently only "litellm" is supported;
+ * the parameter exists for forward compatibility with additional providers.
+ */
+async function login(provider: "litellm"): Promise<void> {
 	const storage = await AuthCredentialStore.open();
 
 	try {
-		let credentials: OAuthCredentials;
-
-		switch (provider) {
-			case "anthropic": {
-				const { loginAnthropic } = await import("./utils/oauth/anthropic");
-				credentials = await loginAnthropic({
-					onAuth(info) {
-						const { url } = info;
-						console.log(`\nOpen this URL in your browser:\n${url}\n`);
-					},
-					onProgress(message) {
-						console.log(message);
-					},
-				});
-				break;
-			}
-
-			case "github-copilot": {
-				const { loginGitHubCopilot } = await import("./utils/oauth/github-copilot");
-				credentials = await loginGitHubCopilot({
-					onAuth(url, instructions) {
-						console.log(`\nOpen this URL in your browser:\n${url}`);
-						if (instructions) console.log(instructions);
-						console.log();
-					},
-					async onPrompt(p) {
-						return await promptFn(`${p.message}${p.placeholder ? ` (${p.placeholder})` : ""}:`);
-					},
-				});
-				break;
-			}
-
-			case "google-gemini-cli": {
-				const { loginGeminiCli } = await import("./utils/oauth/google-gemini-cli");
-				credentials = await loginGeminiCli({
-					onAuth(info) {
-						const { url, instructions } = info;
-						console.log(`\nOpen this URL in your browser:\n${url}`);
-						if (instructions) console.log(instructions);
-						console.log();
-					},
-				});
-				break;
-			}
-
-			case "google-antigravity": {
-				const { loginAntigravity } = await import("./utils/oauth/google-antigravity");
-				credentials = await loginAntigravity({
-					onAuth(info) {
-						const { url, instructions } = info;
-						console.log(`\nOpen this URL in your browser:\n${url}`);
-						if (instructions) console.log(instructions);
-						console.log();
-					},
-				});
-				break;
-			}
-			case "openai-codex": {
-				const { loginOpenAICodex } = await import("./utils/oauth/openai-codex");
-				credentials = await loginOpenAICodex({
-					onAuth(info) {
-						const { url, instructions } = info;
-						console.log(`\nOpen this URL in your browser:\n${url}`);
-						if (instructions) console.log(instructions);
-						console.log();
-					},
-					async onPrompt(p) {
-						return await promptFn(`${p.message}${p.placeholder ? ` (${p.placeholder})` : ""}:`);
-					},
-				});
-				break;
-			}
-
-			case "kimi-code": {
-				const { loginKimi } = await import("./utils/oauth/kimi");
-				credentials = await loginKimi({
-					onAuth(info) {
-						const { url, instructions } = info;
-						console.log(`\nOpen this URL in your browser:\n${url}`);
-						if (instructions) console.log(instructions);
-						console.log();
-					},
-				});
-				break;
-			}
-			case "kilo": {
-				const { loginKilo } = await import("./utils/oauth/kilo");
-				credentials = await loginKilo({
-					onAuth(info) {
-						const { url, instructions } = info;
-						console.log(`\nOpen this URL in your browser:\n${url}`);
-						if (instructions) console.log(instructions);
-						console.log();
-					},
-				});
-				break;
-			}
-			case "kagi": {
-				const { loginKagi } = await import("./utils/oauth/kagi");
-				const apiKey = await loginKagi({
-					onAuth(info) {
-						const { url, instructions } = info;
-						console.log(`\nOpen this URL in your browser:\n${url}`);
-						if (instructions) console.log(instructions);
-						console.log();
-					},
-					onPrompt(p) {
-						return promptFn(`${p.message}${p.placeholder ? ` (${p.placeholder})` : ""}:`);
-					},
-				});
-				storage.saveApiKey(provider, apiKey);
-				console.log(`\nAPI key saved to ~/.omp/agent/agent.db`);
-				return;
-			}
-			case "tavily": {
-				const { loginTavily } = await import("./utils/oauth/tavily");
-				const apiKey = await loginTavily({
-					onAuth(info) {
-						const { url, instructions } = info;
-						console.log(`\nOpen this URL in your browser:\n${url}`);
-						if (instructions) console.log(instructions);
-						console.log();
-					},
-					onPrompt(p) {
-						return promptFn(`${p.message}${p.placeholder ? ` (${p.placeholder})` : ""}:`);
-					},
-				});
-				storage.saveApiKey(provider, apiKey);
-				console.log(`\nAPI key saved to ~/.omp/agent/agent.db`);
-				return;
-			}
-			case "parallel": {
-				const { loginParallel } = await import("./utils/oauth/parallel");
-				const apiKey = await loginParallel({
-					onAuth(info) {
-						const { url, instructions } = info;
-						console.log(`\nOpen this URL in your browser:\n${url}`);
-						if (instructions) console.log(instructions);
-						console.log();
-					},
-					onPrompt(p) {
-						return promptFn(`${p.message}${p.placeholder ? ` (${p.placeholder})` : ""}:`);
-					},
-				});
-				storage.saveApiKey(provider, apiKey);
-				console.log(`\nAPI key saved to ~/.omp/agent/agent.db`);
-				return;
-			}
-
-			case "cursor": {
-				const { loginCursor } = await import("./utils/oauth/cursor");
-				credentials = await loginCursor(
-					url => {
-						console.log(`\nOpen this URL in your browser:\n${url}\n`);
-					},
-					() => {
-						console.log("Waiting for browser authentication...");
-					},
-				);
-				break;
-			}
-
-			case "zai": {
-				const { loginZai } = await import("./utils/oauth/zai");
-				const apiKey = await loginZai({
-					onAuth(info) {
-						const { url, instructions } = info;
-						console.log(`\nOpen this URL in your browser:\n${url}`);
-						if (instructions) console.log(instructions);
-						console.log();
-					},
-					onPrompt(p) {
-						return promptFn(`${p.message}${p.placeholder ? ` (${p.placeholder})` : ""}:`);
-					},
-				});
-				storage.saveApiKey(provider, apiKey);
-				console.log(`\nAPI key saved to ~/.omp/agent/agent.db`);
-				return;
-			}
-
-			case "nanogpt": {
-				const { loginNanoGPT } = await import("./utils/oauth/nanogpt");
-				const apiKey = await loginNanoGPT({
-					onAuth(info) {
-						const { url, instructions } = info;
-						console.log(`\nOpen this URL in your browser:\n${url}`);
-						if (instructions) console.log(instructions);
-						console.log();
-					},
-					onPrompt(p) {
-						return promptFn(`${p.message}${p.placeholder ? ` (${p.placeholder})` : ""}:`);
-					},
-				});
-				storage.saveApiKey(provider, apiKey);
-				console.log(`\nAPI key saved to ~/.omp/agent/agent.db`);
-				return;
-			}
-
-			case "zenmux": {
-				const { loginZenMux } = await import("./utils/oauth/zenmux");
-				const apiKey = await loginZenMux({
-					onAuth(info) {
-						const { url, instructions } = info;
-						console.log(`\nOpen this URL in your browser:\n${url}`);
-						if (instructions) console.log(instructions);
-						console.log();
-					},
-					onPrompt(p) {
-						return promptFn(`${p.message}${p.placeholder ? ` (${p.placeholder})` : ""}:`);
-					},
-				});
-				storage.saveApiKey(provider, apiKey);
-				console.log(`\nAPI key saved to ~/.omp/agent/agent.db`);
-				return;
-			}
-			case "ollama-cloud": {
-				const { loginOllamaCloud } = await import("./utils/oauth/ollama-cloud");
-				const apiKey = await loginOllamaCloud({
-					onAuth(info) {
-						const { url, instructions } = info;
-						console.log(`\nOpen this URL in your browser:\n${url}`);
-						if (instructions) console.log(instructions);
-						console.log();
-					},
-					onPrompt(p) {
-						return promptFn(`${p.message}${p.placeholder ? ` (${p.placeholder})` : ""}:`);
-					},
-				});
-				storage.saveApiKey(provider, apiKey);
-				console.log(`\nAPI key saved to ~/.omp/agent/agent.db`);
-				return;
-			}
-
-			case "minimax-code": {
-				const { loginMiniMaxCode } = await import("./utils/oauth/minimax-code");
-				const apiKey = await loginMiniMaxCode({
-					onAuth(info) {
-						const { url, instructions } = info;
-						console.log(`\nOpen this URL in your browser:\n${url}`);
-						if (instructions) console.log(instructions);
-						console.log();
-					},
-					onPrompt(p) {
-						return promptFn(`${p.message}${p.placeholder ? ` (${p.placeholder})` : ""}:`);
-					},
-				});
-				storage.saveApiKey(provider, apiKey);
-				console.log(`\nAPI key saved to ~/.omp/agent/agent.db`);
-				return;
-			}
-
-			case "minimax-code-cn": {
-				const { loginMiniMaxCodeCn } = await import("./utils/oauth/minimax-code");
-				const apiKey = await loginMiniMaxCodeCn({
-					onAuth(info) {
-						const { url, instructions } = info;
-						console.log(`\nOpen this URL in your browser:\n${url}`);
-						if (instructions) console.log(instructions);
-						console.log();
-					},
-					onPrompt(p) {
-						return promptFn(`${p.message}${p.placeholder ? ` (${p.placeholder})` : ""}:`);
-					},
-				});
-				storage.saveApiKey(provider, apiKey);
-				console.log(`\nAPI key saved to ~/.omp/agent/agent.db`);
-				return;
-			}
-
-			default:
-				throw new Error(`Unknown provider: ${provider}`);
+		const apiKey = await maskedPrompt("Enter LiteLLM API key:");
+		if (!apiKey) {
+			console.log("No API key provided. Login cancelled.");
+			return;
 		}
-
-		storage.saveOAuth(provider, credentials);
-
-		console.log(`\nCredentials saved to ~/.omp/agent/agent.db`);
+		storage.saveApiKey(provider, apiKey);
+		console.log(`\nAPI key saved to ~/.omp/agent/agent.db`);
 	} finally {
 		storage.close();
-		rl.close();
 	}
 }
 
@@ -353,35 +87,21 @@ async function main(): Promise<void> {
 		console.log(`Usage: bunx @oh-my-pi/pi-ai <command> [provider]
 
 Commands:
-  login [provider]  Login to a provider
-  logout [provider] Logout from a provider
+  login [provider]  Login to a provider (default: litellm)
+  logout [provider] Logout from a provider (default: litellm)
   status            Show logged-in providers
   list              List available providers
 
-Providers:
-  anthropic         Anthropic (Claude Pro/Max)
-  github-copilot    GitHub Copilot
-  google-gemini-cli Google Gemini CLI
-  google-antigravity Antigravity (Gemini 3, Claude, GPT-OSS)
-  openai-codex      OpenAI Codex (ChatGPT Plus/Pro)
-  kimi-code         Kimi Code
-  kilo              Kilo Gateway
-  kagi              Kagi
-  tavily            Tavily
-  zai               Z.AI (GLM Coding Plan)
-  nanogpt           NanoGPT
-  minimax-code      MiniMax Coding Plan (International)
-  minimax-code-cn   MiniMax Coding Plan (China)
-  cursor            Cursor (Claude, GPT, etc.)
-  zenmux            ZenMux
-  ollama-cloud      Ollama Cloud
+Provider:
+  litellm           LiteLLM (default)
+
+Other providers are configured via LITELLM_BASE_URL environment variable.
 
 Examples:
-  bunx @oh-my-pi/pi-ai login              # interactive provider selection
-  bunx @oh-my-pi/pi-ai login anthropic    # login to specific provider
-  bunx @oh-my-pi/pi-ai logout anthropic   # logout from specific provider
+  bunx @oh-my-pi/pi-ai login              # login to litellm
+  bunx @oh-my-pi/pi-ai login litellm      # login to litellm (explicit)
+  bunx @oh-my-pi/pi-ai logout             # logout from litellm
   bunx @oh-my-pi/pi-ai status             # show logged-in providers
-  bunx @oh-my-pi/pi-ai list               # list providers
 `);
 		return;
 	}
@@ -417,56 +137,35 @@ Examples:
 	}
 
 	if (command === "list") {
-		console.log("Available providers:\n");
+		console.log("Available model providers (accessed via LiteLLM proxy):\n");
 		for (const p of PROVIDERS) {
-			console.log(`  ${p.id.padEnd(20)} ${p.name}`);
+			const suffix = p.id === "litellm" ? " (login supported)" : "";
+			console.log(`  ${p.id.padEnd(20)} ${p.name}${suffix}`);
 		}
+		console.log("\nLogin is only supported for litellm. Other providers are configured via LITELLM_BASE_URL.");
 		return;
 	}
 
 	if (command === "logout") {
-		let provider = args[1] as OAuthProvider | undefined;
+		const provider = (args[1] ?? "litellm") as string;
+
+		if (provider !== "litellm") {
+			console.error(
+				"Only LiteLLM provider logout is supported. Configure other providers via LITELLM_BASE_URL environment variable.",
+			);
+			process.exit(1);
+		}
+
 		const storage = await AuthCredentialStore.open();
-
 		try {
-			if (!provider) {
-				const providers = storage.listProviders();
-				if (providers.length === 0) {
-					console.log("No credentials stored.");
-					return;
-				}
-
-				const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-				console.log("Select a provider to logout:\n");
-				for (let i = 0; i < providers.length; i++) {
-					console.log(`  ${i + 1}. ${providers[i]}`);
-				}
-				console.log();
-
-				const choice = await prompt(rl, `Enter number (1-${providers.length}): `);
-				rl.close();
-
-				const index = parseInt(choice, 10) - 1;
-				if (index < 0 || index >= providers.length) {
-					console.error("Invalid selection");
-					process.exit(1);
-				}
-				provider = providers[index] as OAuthProvider;
-			}
-			if (!provider) {
-				console.error("No provider selected");
-				process.exit(1);
-			}
-
-			const oauth = storage.getOAuth(provider);
-			const apiKey = storage.getApiKey(provider);
+			const oauth = storage.getOAuth("litellm");
+			const apiKey = storage.getApiKey("litellm");
 			if (!oauth && !apiKey) {
-				console.error(`Not logged in to ${provider}`);
+				console.error(`Not logged in to litellm`);
 				process.exit(1);
 			}
-
-			storage.deleteProvider(provider);
-			console.log(`Logged out from ${provider}`);
+			storage.deleteProvider("litellm");
+			console.log(`Logged out from litellm`);
 		} finally {
 			storage.close();
 		}
@@ -474,39 +173,17 @@ Examples:
 	}
 
 	if (command === "login") {
-		let provider = args[1] as OAuthProvider | undefined;
+		const provider = (args[1] ?? "litellm") as string;
 
-		if (!provider) {
-			const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-			console.log("Select a provider:\n");
-			for (let i = 0; i < PROVIDERS.length; i++) {
-				console.log(`  ${i + 1}. ${PROVIDERS[i].name}`);
-			}
-			console.log();
-
-			const choice = await prompt(rl, `Enter number (1-${PROVIDERS.length}): `);
-			rl.close();
-
-			const index = parseInt(choice, 10) - 1;
-			if (index < 0 || index >= PROVIDERS.length) {
-				console.error("Invalid selection");
-				process.exit(1);
-			}
-			provider = PROVIDERS[index].id as OAuthProvider;
-		}
-		if (!provider) {
-			console.error("No provider selected");
+		if (provider !== "litellm") {
+			console.error(
+				"Only LiteLLM provider login is supported. Configure other providers via LITELLM_BASE_URL environment variable.",
+			);
 			process.exit(1);
 		}
 
-		if (!PROVIDERS.some(p => p.id === provider)) {
-			console.error(`Unknown provider: ${provider}`);
-			console.error(`Use 'bunx @oh-my-pi/pi-ai list' to see available providers`);
-			process.exit(1);
-		}
-
-		console.log(`Logging in to ${provider}…`);
-		await login(provider);
+		console.log(`Logging in to litellm…`);
+		await login("litellm");
 		return;
 	}
 

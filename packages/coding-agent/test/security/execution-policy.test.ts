@@ -2,11 +2,25 @@ import { beforeEach, describe, expect, it, vi } from "bun:test";
 import * as piUtils from "@oh-my-pi/pi-utils";
 import { ExecutionPolicy } from "../../src/security/execution-policy";
 
-vi.spyOn(piUtils, "emitSecurityEvent").mockReturnValue({ eventId: "", timestamp: "", eventType: piUtils.SecurityEventType.AUTH_SUCCESS, actor: "", resource: "", outcome: "success" });
+vi.spyOn(piUtils, "emitSecurityEvent").mockReturnValue({
+	eventId: "",
+	timestamp: "",
+	eventType: piUtils.SecurityEventType.AUTH_SUCCESS,
+	actor: "",
+	resource: "",
+	outcome: "success",
+});
 
 describe("ExecutionPolicy", () => {
 	beforeEach(() => {
-		vi.spyOn(piUtils, "emitSecurityEvent").mockReturnValue({ eventId: "", timestamp: "", eventType: piUtils.SecurityEventType.AUTH_SUCCESS, actor: "", resource: "", outcome: "success" });
+		vi.spyOn(piUtils, "emitSecurityEvent").mockReturnValue({
+			eventId: "",
+			timestamp: "",
+			eventType: piUtils.SecurityEventType.AUTH_SUCCESS,
+			actor: "",
+			resource: "",
+			outcome: "success",
+		});
 	});
 
 	describe("permissive mode", () => {
