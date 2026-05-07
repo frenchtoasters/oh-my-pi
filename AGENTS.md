@@ -540,3 +540,32 @@ Use these sections under `## [Unreleased]`:
    ```
 
 The script handles: version bump, CHANGELOG finalization, commit, tag, publish, and adding new `[Unreleased]` sections.
+
+## Security Coding Guidelines
+
+### Audit Events
+- All security-relevant operations MUST emit audit events via `emitSecurityEvent` from `@oh-my-pi/pi-utils`
+- Use `auditToolExecution`, `auditToolBlocked`, `auditSessionStart`, `auditSessionEnd`, `auditCredentialAccess`, `auditConfigChange` from `packages/coding-agent/src/security/audit-instrumentation.ts`
+- Never log credentials, API keys, or tokens in audit metadata
+
+### Cryptography
+- All cryptographic operations MUST use constants from `packages/ai/src/crypto-policy.ts`
+- Only AES-256-GCM for symmetric encryption
+- Only SHA-256/384/512 for hashing (SHA-1 allowed only for git operations)
+- PBKDF2 with minimum 100,000 iterations for key derivation
+- TLS 1.2+ minimum for all network communication
+
+### Credentials
+- Credentials MUST be encrypted at rest when `security.encryptCredentials` is enabled
+- Never store plaintext credentials in logs, session transcripts, or error messages
+- Use `CredentialEncryption` from `@oh-my-pi/pi-ai` for credential storage
+
+### Tool Execution
+- Respect `security.executionPolicy` setting (permissive/strict)
+- In strict mode: no network commands, CWD-only filesystem, limited command set
+- All tool executions should be auditable via security events
+
+### TLS
+- Never set `rejectUnauthorized: false` without checking `security.tlsRejectUnauthorized`
+- Use `getTlsFetchOptions()` from `@oh-my-pi/pi-ai` for provider fetch options
+- Call `validateTlsEnvironment()` at startup to detect unsafe env vars

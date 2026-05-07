@@ -1,5 +1,6 @@
 export { abortableSleep, createAbortableStream, once, untilAborted } from "./abortable";
 export * from "./async";
+export * from "./audit-integrity";
 export * from "./color";
 export * from "./dirs";
 export * from "./env";
@@ -18,6 +19,7 @@ export * as procmgr from "./procmgr";
 export * as prompt from "./prompt";
 export * as ptree from "./ptree";
 export { AbortError, ChildProcess, Exception, NonZeroExitError } from "./ptree";
+export * from "./security-audit";
 export * from "./snowflake";
 export * from "./stream";
 export * from "./tab-spacing";

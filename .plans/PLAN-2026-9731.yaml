@@ -1,0 +1,20 @@
+id: PLAN-2026-9731
+title: NIST 800-53 Compliance Posture for oh-my-pi
+status: draft
+size: large
+created: 2026-04-27T20:31:48.278029Z
+updated: 2026-04-27T20:31:48.278029Z
+author: null
+objective: Establish NIST 800-53 compliance tracking for the oh-my-pi CLI coding agent. Assess current security posture, identify gaps, and create remediation roadmap for Low baseline compliance.
+approach: null
+phases: []
+files_affected: []
+compliance:
+  baseline: null
+  controls_checked: []
+  checked_at: null
+decisions: []
+gitlab:
+  issue: null
+  plan_mr: null
+  impl_mr: null

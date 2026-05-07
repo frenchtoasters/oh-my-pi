@@ -1,0 +1,104 @@
+id: PLAN-2026-8947
+title: NIST 800-53 Compliance Posture for oh-my-pi
+status: draft
+size: large
+created: 2026-04-27T20:31:58.698659Z
+updated: 2026-04-27T20:33:39.611320Z
+author: null
+objective: Establish NIST 800-53 compliance tracking for the oh-my-pi CLI coding agent. Assess current security posture, identify gaps, and create remediation roadmap for Low baseline compliance.
+approach: null
+phases: []
+files_affected: []
+compliance:
+  baseline: null
+  controls_checked:
+  - id: PL-10
+    status: partial
+    narrative: 'Addressed by decision PLAN-2026-8947-DEC-001: LOW baseline (149 controls) is appropriate for a local CLI tool. Many controls in MODERATE/HIGH are relevant to multi-user hosted systems. LOW provides foundational coverage. Can upgrade baseline later.'
+    gap: null
+  - id: PL-11
+    status: partial
+    narrative: 'Addressed by decision PLAN-2026-8947-DEC-001: LOW baseline (149 controls) is appropriate for a local CLI tool. Many controls in MODERATE/HIGH are relevant to multi-user hosted systems. LOW provides foundational coverage. Can upgrade baseline later.'
+    gap: null
+  - id: PE-1
+    status: partial
+    narrative: 'Addressed by decision PLAN-2026-8947-DEC-002: oh-my-pi is a local CLI tool distributed via npm. Physical security (PE), media protection (MP), maintenance (MA), contingency planning (CP), awareness training (AT), and personnel security (PS) are organizational controls that do not apply to a CLI tool. Documenting not-applicable status with rationale satisfies the scoping requirement.'
+    gap: null
+  - id: MP-1
+    status: partial
+    narrative: 'Addressed by decision PLAN-2026-8947-DEC-002: oh-my-pi is a local CLI tool distributed via npm. Physical security (PE), media protection (MP), maintenance (MA), contingency planning (CP), awareness training (AT), and personnel security (PS) are organizational controls that do not apply to a CLI tool. Documenting not-applicable status with rationale satisfies the scoping requirement.'
+    gap: null
+  - id: MA-1
+    status: partial
+    narrative: 'Addressed by decision PLAN-2026-8947-DEC-002: oh-my-pi is a local CLI tool distributed via npm. Physical security (PE), media protection (MP), maintenance (MA), contingency planning (CP), awareness training (AT), and personnel security (PS) are organizational controls that do not apply to a CLI tool. Documenting not-applicable status with rationale satisfies the scoping requirement.'
+    gap: null
+  - id: CP-1
+    status: partial
+    narrative: 'Addressed by decision PLAN-2026-8947-DEC-002: oh-my-pi is a local CLI tool distributed via npm. Physical security (PE), media protection (MP), maintenance (MA), contingency planning (CP), awareness training (AT), and personnel security (PS) are organizational controls that do not apply to a CLI tool. Documenting not-applicable status with rationale satisfies the scoping requirement.'
+    gap: null
+  - id: AT-1
+    status: partial
+    narrative: 'Addressed by decision PLAN-2026-8947-DEC-002: oh-my-pi is a local CLI tool distributed via npm. Physical security (PE), media protection (MP), maintenance (MA), contingency planning (CP), awareness training (AT), and personnel security (PS) are organizational controls that do not apply to a CLI tool. Documenting not-applicable status with rationale satisfies the scoping requirement.'
+    gap: null
+  - id: PS-1
+    status: partial
+    narrative: 'Addressed by decision PLAN-2026-8947-DEC-002: oh-my-pi is a local CLI tool distributed via npm. Physical security (PE), media protection (MP), maintenance (MA), contingency planning (CP), awareness training (AT), and personnel security (PS) are organizational controls that do not apply to a CLI tool. Documenting not-applicable status with rationale satisfies the scoping requirement.'
+    gap: null
+  - id: CA-2
+    status: partial
+    narrative: 'Addressed by decision PLAN-2026-8947-DEC-003: ai-dev provides automated compliance checking against NIST baselines, plan YAML schema validation in CI, and decision journaling. It integrates with the existing coding workflow via MCP protocol. Plans are version-controlled artifacts in the repo.'
+    gap: null
+  - id: CA-5
+    status: partial
+    narrative: 'Addressed by decision PLAN-2026-8947-DEC-003: ai-dev provides automated compliance checking against NIST baselines, plan YAML schema validation in CI, and decision journaling. It integrates with the existing coding workflow via MCP protocol. Plans are version-controlled artifacts in the repo.'
+    gap: null
+  - id: CA-7
+    status: partial
+    narrative: 'Addressed by decision PLAN-2026-8947-DEC-003: ai-dev provides automated compliance checking against NIST baselines, plan YAML schema validation in CI, and decision journaling. It integrates with the existing coding workflow via MCP protocol. Plans are version-controlled artifacts in the repo.'
+    gap: null
+  checked_at: null
+decisions:
+- id: PLAN-2026-8947-DEC-001
+  timestamp: 2026-04-27T20:33:38.602366Z
+  context: Needed to decide which NIST 800-53 baseline to target for a CLI developer tool
+  decision: Target LOW baseline as starting point
+  alternatives:
+  - MODERATE baseline
+  - HIGH baseline
+  - No formal baseline
+  rationale: LOW baseline (149 controls) is appropriate for a local CLI tool. Many controls in MODERATE/HIGH are relevant to multi-user hosted systems. LOW provides foundational coverage. Can upgrade baseline later.
+  controls_affected:
+  - PL-10
+  - PL-11
+- id: PLAN-2026-8947-DEC-002
+  timestamp: 2026-04-27T20:33:39.108259Z
+  context: Many LOW baseline controls assume hosted information systems with physical infrastructure
+  decision: Classify PE-*, MP-*, MA-*, CP-*, AT-*, PS-* families as not-applicable with documented rationale
+  alternatives:
+  - Address all controls regardless of applicability
+  - Create compensating controls for physical security families
+  rationale: oh-my-pi is a local CLI tool distributed via npm. Physical security (PE), media protection (MP), maintenance (MA), contingency planning (CP), awareness training (AT), and personnel security (PS) are organizational controls that do not apply to a CLI tool. Documenting not-applicable status with rationale satisfies the scoping requirement.
+  controls_affected:
+  - PE-1
+  - MP-1
+  - MA-1
+  - CP-1
+  - AT-1
+  - PS-1
+- id: PLAN-2026-8947-DEC-003
+  timestamp: 2026-04-27T20:33:39.611315Z
+  context: Need a mechanism for ongoing compliance tracking in the development workflow
+  decision: Integrate ai-dev MCP server for plan-driven development with compliance checks
+  alternatives:
+  - Manual spreadsheet tracking
+  - GRC tool integration
+  - No ongoing tracking
+  rationale: ai-dev provides automated compliance checking against NIST baselines, plan YAML schema validation in CI, and decision journaling. It integrates with the existing coding workflow via MCP protocol. Plans are version-controlled artifacts in the repo.
+  controls_affected:
+  - CA-2
+  - CA-5
+  - CA-7
+gitlab:
+  issue: null
+  plan_mr: null
+  impl_mr: null

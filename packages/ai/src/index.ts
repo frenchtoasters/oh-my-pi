@@ -1,7 +1,10 @@
 export type { Static, TSchema } from "@sinclair/typebox";
 export { Type } from "@sinclair/typebox";
 export * from "./api-registry";
+export * from "./auth-failure-tracker";
 export * from "./auth-storage";
+export * from "./credential-encryption";
+export * from "./crypto-policy";
 export * from "./model-cache";
 export * from "./model-manager";
 export * from "./model-thinking";
@@ -24,6 +27,7 @@ export * from "./providers/openai-responses";
 export * from "./providers/synthetic";
 export * from "./rate-limit-utils";
 export * from "./stream";
+export * from "./tls-policy";
 export * from "./types";
 export * from "./usage";
 export * from "./usage/claude";

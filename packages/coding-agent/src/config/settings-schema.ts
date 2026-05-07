@@ -28,7 +28,8 @@ export type SettingTab =
 	| "editing"
 	| "tools"
 	| "tasks"
-	| "providers";
+	| "providers"
+	| "security";
 
 /** Tab display metadata - icon is resolved via theme.symbol() */
 export type TabMetadata = { label: string; icon: `tab.${string}` };
@@ -44,6 +45,7 @@ export const SETTING_TABS: SettingTab[] = [
 	"tools",
 	"tasks",
 	"providers",
+	"security",
 ];
 
 /** Tab display metadata - icon is a symbol key from theme.ts (tab.*) */
@@ -57,6 +59,7 @@ export const TAB_METADATA: Record<SettingTab, { label: string; icon: `tab.${stri
 	tools: { label: "Tools", icon: "tab.tools" },
 	tasks: { label: "Tasks", icon: "tab.tasks" },
 	providers: { label: "Providers", icon: "tab.providers" },
+	security: { label: "Security", icon: "tab.security" },
 };
 
 /** Status line segment identifiers */
@@ -2470,6 +2473,72 @@ export const SETTINGS_SCHEMA = {
 	"thinkingBudgets.high": { type: "number", default: 16384 },
 
 	"thinkingBudgets.xhigh": { type: "number", default: 32768 },
+
+	// ────────────────────────────────────────────────────────────────────────
+	// Security
+	// ────────────────────────────────────────────────────────────────────────
+
+	"security.executionPolicy": {
+		type: "enum",
+		values: ["permissive", "strict"],
+		default: "permissive",
+		ui: {
+			tab: "security",
+			label: "Execution Policy",
+			description: "Tool execution restriction level (strict: no network, CWD-only filesystem)",
+		},
+	},
+
+	"security.encryptCredentials": {
+		type: "boolean",
+		default: false,
+		ui: {
+			tab: "security",
+			label: "Encrypt Credentials",
+			description: "Encrypt stored credentials at rest using OS keychain",
+		},
+	},
+
+	"security.encryptSessions": {
+		type: "boolean",
+		default: false,
+		ui: {
+			tab: "security",
+			label: "Encrypt Sessions",
+			description: "Encrypt session transcripts at rest",
+		},
+	},
+
+	"security.auditEnabled": {
+		type: "boolean",
+		default: true,
+		ui: {
+			tab: "security",
+			label: "Security Audit Log",
+			description: "Enable structured security event logging",
+		},
+	},
+
+	"security.tlsRejectUnauthorized": {
+		type: "boolean",
+		default: true,
+		ui: {
+			tab: "security",
+			label: "TLS Certificate Validation",
+			description: "Reject connections with invalid TLS certificates",
+		},
+	},
+
+	"security.maxAuthFailures": {
+		type: "number",
+		default: 3,
+		ui: {
+			tab: "security",
+			label: "Max Auth Failures",
+			description: "Consecutive auth failures before stopping the action",
+		},
+	},
+
 } as const;
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2700,6 +2769,16 @@ export interface GroupTypeMap {
 	modelTags: ModelTagsSettings;
 	cycleOrder: string[];
 	shellMinimizer: ShellMinimizerSettings;
+	security: SecuritySettings;
 }
+export interface SecuritySettings {
+	executionPolicy: "permissive" | "strict";
+	encryptCredentials: boolean;
+	encryptSessions: boolean;
+	auditEnabled: boolean;
+	tlsRejectUnauthorized: boolean;
+	maxAuthFailures: number;
+}
+
 
 export type GroupPrefix = keyof GroupTypeMap;

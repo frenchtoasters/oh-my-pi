@@ -1,0 +1,117 @@
+---
+plan_id: PLAN-2026-0001
+title: "Fix TUI line duplication in neovim terminal"
+status: implemented
+size: small
+created: 2026-04-27
+author: ai-agent
+
+objective: >
+  Fix line duplication in neovim's :terminal by switching the TUI differential
+  renderer from relative cursor movement to absolute cursor positioning (CUP)
+  when running inside an embedded terminal environment ($NVIM or $VIM_TERMINAL).
+
+approach: >
+  Detect embedded terminals via environment variables. Replace relative cursor
+  movement (\x1b[NA/B) with absolute CUP (\x1b[row;1H) in all differential
+  render paths. Merge the cursor-positioning write into the main synchronized
+  output block to avoid split writes that cause intermediate flushes in neovim's
+  libvterm. Add setEmbeddedTerminal() instance method for test overrides.
+
+phases:
+  - name: "Investigation"
+    status: complete
+    tasks:
+      - "Analyze #doRender differential paths and #positionHardwareCursor"
+      - "Identify all relative cursor movement sites"
+
+  - name: "Implementation"
+    status: complete
+    tasks:
+      - "Add isEmbeddedTerminal module constant and #embeddedTerminal instance field"
+      - "Add screenRow1() helper for CUP row computation"
+      - "Replace relative movement with CUP in deleted-lines path"
+      - "Replace relative movement with CUP in main differential path"
+      - "Replace relative movement with CUP in leftover-clearing path"
+      - "Merge cursor positioning into main synchronized output block"
+      - "Skip height-change full redraw for embedded terminals"
+      - "Skip scrollback clearing (3J) for embedded terminals"
+      - "Update #positionHardwareCursor to use CUP in embedded mode"
+      - "Add setEmbeddedTerminal() public method for testing"
+
+  - name: "Verification"
+    status: complete
+    tasks:
+      - "Write 18 tests in embedded-terminal.test.ts"
+      - "Verify bun check:ts passes (biome lint/format + tsgo type check)"
+      - "Verify no regressions in existing render-regressions.test.ts"
+      - "Update CHANGELOG.md under [Unreleased]"
+
+files_affected:
+  - path: packages/tui/src/tui.ts
+    action: modify
+    rationale: "Core fix: absolute positioning in differential renderer for embedded terminals"
+  - path: packages/tui/test/embedded-terminal.test.ts
+    action: create
+    rationale: "18 tests validating embedded terminal rendering correctness and parity"
+  - path: packages/tui/CHANGELOG.md
+    action: modify
+    rationale: "Document the fix and new API under [Unreleased]"
+
+decisions:
+  - context: >
+      Needed to choose between always using absolute positioning vs only
+      in detected embedded terminals.
+    decision: "Use absolute positioning only when $NVIM or $VIM_TERMINAL is set"
+    alternatives:
+      - "Always use absolute positioning for all terminals"
+      - "Attempt to fix relative cursor tracking drift"
+    rationale: >
+      Absolute positioning is immune to cursor tracking drift but changes the
+      escape sequence pattern. Limiting to detected embedded terminals avoids
+      risk to the well-tested relative movement path in normal terminals.
+
+  - context: >
+      isEmbeddedTerminal was initially a module-level constant (not testable
+      per-instance). Needed a way to exercise both code paths in tests.
+    decision: "Refactored to instance field with setEmbeddedTerminal() setter"
+    alternatives:
+      - "Keep module constant; test via subprocess with NVIM=1"
+      - "Use mock.module() (prohibited by AGENTS.md)"
+    rationale: >
+      Instance field follows existing setClearOnShrink() pattern. Subprocess
+      testing is fragile and slow. mock.module() is explicitly banned.
+
+compliance:
+  baseline: low
+  controls:
+    - id: CM-3
+      title: "Configuration Change Control"
+      status: addressed
+      evidence: >
+        Change tracked via git. Plan documented. CHANGELOG updated.
+        All tests pass. No behavioral change for non-embedded terminals.
+
+    - id: SI-2
+      title: "Flaw Remediation"
+      status: addressed
+      evidence: >
+        Bug identified (line duplication in neovim terminal). Root cause
+        analyzed (relative cursor movement drift in libvterm). Fix verified
+        via 18 automated tests including parity checks against normal mode.
+
+    - id: CM-6
+      title: "Configuration Settings"
+      status: not-applicable
+      rationale: >
+        No new configuration settings introduced. Detection is automatic
+        via environment variables set by neovim/vim. setEmbeddedTerminal()
+        is a test-only API, not user-facing configuration.
+
+    - id: SI-10
+      title: "Information Input Validation"
+      status: not-applicable
+      rationale: >
+        No new external inputs. Environment variable detection uses Boolean()
+        on existing process environment. No user-supplied data enters the
+        rendering path through this change.
