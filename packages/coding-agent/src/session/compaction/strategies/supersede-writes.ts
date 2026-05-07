@@ -31,9 +31,9 @@ export function supersedeWrites(
 		if (msg.role === "assistant") {
 			for (const content of msg.content) {
 				if (content.type === "toolCall" && config.readTools.includes(content.name)) {
-					const filePath = content.arguments?.filePath;
-					if (typeof filePath === "string") {
-						lastReadIndex.set(filePath, i);
+					const targetPath = content.arguments?.path;
+					if (typeof targetPath === "string") {
+						lastReadIndex.set(targetPath, i);
 					}
 				}
 			}
@@ -48,9 +48,9 @@ export function supersedeWrites(
 		if (msg.role === "assistant") {
 			for (const content of msg.content) {
 				if (content.type === "toolCall" && config.writeTools.includes(content.name)) {
-					const filePath = content.arguments?.filePath;
-					if (typeof filePath === "string" && !protectedGlobs.some(glob => glob.match(filePath))) {
-						const lastRead = lastReadIndex.get(filePath);
+					const targetPath = content.arguments?.path;
+					if (typeof targetPath === "string" && !protectedGlobs.some(glob => glob.match(targetPath))) {
+						const lastRead = lastReadIndex.get(targetPath);
 						if (lastRead !== undefined && lastRead > i) {
 							supersededToolCallIds.add(content.id);
 						}
@@ -76,7 +76,7 @@ export function supersedeWrites(
 							arguments: {
 								_pruned: true,
 								_reason: "superseded-by-read",
-								filePath: content.arguments?.filePath,
+								path: content.arguments?.path,
 							},
 						} satisfies ToolCall;
 					}

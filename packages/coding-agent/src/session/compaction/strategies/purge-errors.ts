@@ -1,17 +1,9 @@
 import type { AgentMessage } from "@oh-my-pi/pi-agent-core";
+import { turnAtIndex } from "./utils.js";
 
 export interface PurgeErrorsConfig {
 	turnThreshold: number;
 	protectedTools: string[];
-}
-
-/** Count assistant messages up to (but not including) the message at msgIndex. */
-function turnAtIndex(messages: AgentMessage[], msgIndex: number): number {
-	let turn = 0;
-	for (let i = 0; i < msgIndex; i++) {
-		if (messages[i].role === "assistant") turn++;
-	}
-	return turn;
 }
 
 export function purgeErrorInputs(

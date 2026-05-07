@@ -1104,8 +1104,10 @@ export class InteractiveMode implements InteractiveModeContext {
 			try {
 				const projectDir = this.sessionManager.getCwd();
 				const plansDir = path.join(projectDir, ".plans");
-				const planFileName = options.finalPlanFilePath.replace(/^local:\/\//, "");
+				const planFileName = path.basename(options.finalPlanFilePath.replace(/^local:\/\//, ""));
+				if (!planFileName) throw new Error("Empty plan filename");
 				const planDestination = path.join(plansDir, planFileName);
+				await fs.mkdir(plansDir, { recursive: true });
 				await Bun.write(planDestination, planContent);
 			} catch (error) {
 				// Log but don't fail — the local:// copy is the primary artifact

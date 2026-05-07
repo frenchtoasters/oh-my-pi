@@ -1,4 +1,5 @@
 import type { AgentMessage } from "@oh-my-pi/pi-agent-core";
+import { turnAtIndex } from "./utils.js";
 
 export interface DeduplicationConfig {
 	protectedTools: string[];
@@ -10,15 +11,6 @@ function getToolSignature(name: string, args: Record<string, unknown>): string {
 	return JSON.stringify({ name, args });
 }
 
-/** Count assistant messages up to (but not including) msgIndex. */
-function turnAtIndex(messages: AgentMessage[], msgIndex: number): number {
-	let turn = 0;
-	for (let i = 0; i < msgIndex; i++) {
-		if (messages[i].role === "assistant") turn++;
-	}
-	return turn;
-}
-
 export function deduplicateToolCalls(
 	messages: AgentMessage[],
 	currentTurn: number,
@@ -27,13 +19,12 @@ export function deduplicateToolCalls(
 	// Pre-compile globs for protected file patterns
 	const protectedGlobs = config.protectedFilePatterns.map(pattern => new Bun.Glob(pattern));
 
-	// Map: signature -> {messageIndex, toolCallId, tokenCount, turn}[]
+	// Map: signature -> {messageIndex, toolCallId, turn}[]
 	const signatureMap = new Map<
 		string,
 		{
 			messageIndex: number;
 			toolCallId: string;
-			tokenCount: number;
 			turn: number;
 		}[]
 	>();
@@ -47,18 +38,17 @@ export function deduplicateToolCalls(
 					if (config.protectedTools.includes(block.name)) return;
 
 					// Protection: Protected file patterns (never deduplicate these)
-					const filePath = block.arguments.filePath;
-					if (typeof filePath === "string" && protectedGlobs.some(glob => glob.match(filePath))) {
+					// NOTE: Only checks `arguments.path` — tools using other arg names for file targets are not covered.
+					const targetPath = block.arguments?.path;
+					if (typeof targetPath === "string" && protectedGlobs.some(glob => glob.match(targetPath))) {
 						return;
 					}
 
 					const signature = getToolSignature(block.name, block.arguments as Record<string, unknown>);
-					// Rough token estimate: JSON length / 4
-					const tokenCount = JSON.stringify(block.arguments).length / 4;
 					const turn = turnAtIndex(messages, msgIndex);
 
 					const list = signatureMap.get(signature) ?? [];
-					list.push({ messageIndex: msgIndex, toolCallId: block.id, tokenCount, turn });
+					list.push({ messageIndex: msgIndex, toolCallId: block.id, turn });
 					signatureMap.set(signature, list);
 				}
 			});
@@ -90,7 +80,10 @@ export function deduplicateToolCalls(
 					return true;
 				});
 
-				if (newContent.length === 0) return null;
+				// Retain a placeholder to preserve role alternation — downstream passes
+				// (purgeErrors, supersedeWrites) only act on toolCall blocks, so this is safe.
+				if (newContent.length === 0)
+					return { ...msg, content: [{ type: "text" as const, text: "[tool calls deduplicated]" }] };
 
 				return { ...msg, content: newContent };
 			}
