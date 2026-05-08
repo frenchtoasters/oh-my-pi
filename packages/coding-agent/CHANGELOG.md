@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Changed `compaction.idleEnabled` default from `false` to `true` — idle compaction now runs automatically when context exceeds the idle threshold
+- Changed `compaction.idleThresholdTokens` default from 200K to 100K tokens
+- Changed `compaction.idleTimeoutSeconds` default from 300s to 120s
+- Changed auto-compaction threshold reserve from 15% to 25% of context window — compaction now triggers at ~75% context usage instead of ~85%
+
+### Added
+
+- Added iteration-based compaction trigger (`compaction.iterationThreshold`, default: 15 turns) — compacts after N assistant turns even below the token threshold when context is >50% full
+- Added tool output pruning before idle compaction to reduce unnecessary summarization calls
+
 ## [14.7.2] - 2026-05-06
 ### Breaking Changes
 

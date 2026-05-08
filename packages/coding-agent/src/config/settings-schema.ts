@@ -1048,10 +1048,29 @@ export const SETTINGS_SCHEMA = {
 
 	"compaction.remoteEndpoint": { type: "string", default: undefined },
 
+	"compaction.iterationThreshold": {
+		type: "number",
+		default: 15,
+		ui: {
+			tab: "context",
+			label: "Iteration Compaction Threshold",
+			description:
+				"Number of assistant turns before triggering compaction (requires >50% context usage). 0 to disable.",
+			options: [
+				{ value: "0", label: "Disabled" },
+				{ value: "10", label: "10 turns" },
+				{ value: "15", label: "15 turns" },
+				{ value: "20", label: "20 turns" },
+				{ value: "30", label: "30 turns" },
+				{ value: "50", label: "50 turns" },
+			],
+		},
+	},
+
 	// Idle compaction
 	"compaction.idleEnabled": {
 		type: "boolean",
-		default: false,
+		default: true,
 		ui: {
 			tab: "context",
 			label: "Idle Compaction",
@@ -1061,7 +1080,7 @@ export const SETTINGS_SCHEMA = {
 
 	"compaction.idleThresholdTokens": {
 		type: "number",
-		default: 200000,
+		default: 100000,
 		ui: {
 			tab: "context",
 			label: "Idle Compaction Threshold",
@@ -1082,7 +1101,7 @@ export const SETTINGS_SCHEMA = {
 
 	"compaction.idleTimeoutSeconds": {
 		type: "number",
-		default: 300,
+		default: 120,
 		ui: {
 			tab: "context",
 			label: "Idle Compaction Delay",
@@ -2632,6 +2651,7 @@ export interface CompactionSettings {
 	idleEnabled: boolean;
 	idleThresholdTokens: number;
 	idleTimeoutSeconds: number;
+	iterationThreshold: number;
 }
 
 export interface ContextPromotionSettings {

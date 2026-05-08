@@ -142,6 +142,7 @@ export interface CompactionSettings {
 	autoContinue?: boolean;
 	remoteEnabled?: boolean;
 	remoteEndpoint?: string;
+	iterationThreshold?: number;
 }
 
 export const DEFAULT_COMPACTION_SETTINGS: CompactionSettings = {
@@ -153,6 +154,7 @@ export const DEFAULT_COMPACTION_SETTINGS: CompactionSettings = {
 	keepRecentTokens: 20000,
 	autoContinue: true,
 	remoteEnabled: true,
+	iterationThreshold: 15,
 };
 
 // ============================================================================
@@ -204,10 +206,10 @@ export function getLastAssistantUsage(entries: SessionEntry[]): Usage | undefine
 }
 
 /**
- * Effective reserve: at least 15% of context window or the configured floor, whichever is larger.
+ * Effective reserve: at least 25% of context window or the configured floor, whichever is larger.
  */
 export function effectiveReserveTokens(contextWindow: number, settings: CompactionSettings): number {
-	return Math.max(Math.floor(contextWindow * 0.15), settings.reserveTokens);
+	return Math.max(Math.floor(contextWindow * 0.25), settings.reserveTokens);
 }
 
 /**
@@ -234,6 +236,28 @@ export function resolveThresholdTokens(contextWindow: number, settings: Compacti
 	}
 	const clampedThresholdPercent = Math.min(99, Math.max(1, thresholdPercent));
 	return Math.floor(contextWindow * (clampedThresholdPercent / 100));
+}
+
+/** Minimum context usage ratio for iteration-based compaction to trigger. */
+const ITERATION_COMPACTION_MIN_USAGE_RATIO = 0.5;
+
+/**
+ * Check if compaction should trigger based on iteration (turn) count.
+ * Fires when assistant turns since last compaction exceed threshold AND
+ * context usage is above 50%.
+ */
+export function shouldCompactByIterations(
+	assistantTurnsSinceCompaction: number,
+	contextTokens: number,
+	contextWindow: number,
+	settings: CompactionSettings,
+): boolean {
+	if (!settings.enabled || settings.strategy === "off" || contextWindow <= 0) return false;
+	const threshold = settings.iterationThreshold ?? 15;
+	if (threshold <= 0) return false;
+	if (assistantTurnsSinceCompaction < threshold) return false;
+	// Only fire if context is at least half full
+	return contextTokens > contextWindow * ITERATION_COMPACTION_MIN_USAGE_RATIO;
 }
 
 // ============================================================================

@@ -158,6 +158,7 @@ import {
 	generateBranchSummary,
 	prepareCompaction,
 	shouldCompact,
+	shouldCompactByIterations,
 } from "./compaction";
 import { DEFAULT_PRUNE_CONFIG, pruneToolOutputs } from "./compaction/pruning";
 import {
@@ -4528,6 +4529,17 @@ export class AgentSession {
 	/** Trigger idle compaction through the auto-compaction flow (with UI events). */
 	async runIdleCompaction(): Promise<void> {
 		if (this.isStreaming || this.isCompacting) return;
+		// Run tool output pruning first — may reduce context enough to avoid compaction
+		const pruneResult = await this.#pruneToolOutputs();
+		// Re-check whether context still exceeds idle threshold after pruning
+		const idleThreshold = this.settings.get("compaction.idleThresholdTokens");
+		const lastAssistant = this.agent.state.messages
+			.slice()
+			.reverse()
+			.find((m): m is AssistantMessage => m.role === "assistant" && m.stopReason !== "aborted");
+		if (!lastAssistant?.usage) return;
+		const effectiveTokens = Math.max(0, calculatePromptTokens(lastAssistant.usage) - (pruneResult?.tokensSaved ?? 0));
+		if (effectiveTokens < idleThreshold) return;
 		await this.#runAutoCompaction("idle", false, true);
 	}
 
@@ -4717,6 +4729,24 @@ export class AgentSession {
 		}
 	}
 
+	/** Count assistant turns since the most recent compaction entry in the branch. */
+	#assistantTurnsSinceCompaction(): number {
+		const entries = this.sessionManager.getBranch();
+		let count = 0;
+		// Walk backwards from end; stop at the most recent compaction entry
+		for (let i = entries.length - 1; i >= 0; i--) {
+			const entry = entries[i];
+			if (entry.type === "compaction") break;
+			if (entry.type === "message" && entry.message.role === "assistant") {
+				const msg = entry.message as AssistantMessage;
+				if (msg.stopReason !== "aborted" && msg.stopReason !== "error") {
+					count++;
+				}
+			}
+		}
+		return count;
+	}
+
 	/**
 	 * Check if context maintenance or promotion is needed and run it.
 	 * Called after agent_end and before prompt submission.
@@ -4781,7 +4811,16 @@ export class AgentSession {
 		if (pruneResult) {
 			contextTokens = Math.max(0, contextTokens - pruneResult.tokensSaved);
 		}
-		if (shouldCompact(contextTokens, contextWindow, compactionSettings)) {
+		const tokenThresholdExceeded = shouldCompact(contextTokens, contextWindow, compactionSettings);
+		const iterationThresholdExceeded =
+			!tokenThresholdExceeded &&
+			shouldCompactByIterations(
+				this.#assistantTurnsSinceCompaction(),
+				contextTokens,
+				contextWindow,
+				compactionSettings,
+			);
+		if (tokenThresholdExceeded || iterationThresholdExceeded) {
 			// Try promotion first — if a larger model is available, switch instead of compacting
 			const promoted = await this.#tryContextPromotion(assistantMessage);
 			if (!promoted) {

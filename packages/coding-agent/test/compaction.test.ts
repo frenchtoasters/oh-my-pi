@@ -16,6 +16,7 @@ import {
 	getLastAssistantUsage,
 	prepareCompaction,
 	shouldCompact,
+	shouldCompactByIterations,
 } from "../src/session/compaction/compaction";
 import {
 	buildSessionContext,
@@ -234,10 +235,10 @@ describe("shouldCompact", () => {
 		};
 
 		// default mode uses legacy reserve behavior:
-		// effective reserve = max(floor(100000 * 0.15), 10000) = 15000, threshold = 85000
+		// effective reserve = max(floor(100000 * 0.25), 10000) = 25000, threshold = 75000
 		expect(shouldCompact(95000, 100000, settings)).toBe(true);
-		expect(shouldCompact(86000, 100000, settings)).toBe(true);
-		expect(shouldCompact(84000, 100000, settings)).toBe(false);
+		expect(shouldCompact(76000, 100000, settings)).toBe(true);
+		expect(shouldCompact(74000, 100000, settings)).toBe(false);
 	});
 
 	it("should use configured threshold percent", () => {
@@ -260,7 +261,7 @@ describe("shouldCompact", () => {
 			keepRecentTokens: 20_000,
 		};
 
-		// effective reserve = max(15000, 30000) = 30000, threshold = 70000
+		// effective reserve = max(25000, 30000) = 30000, threshold = 70000
 		expect(shouldCompact(70_000, 100_000, settings)).toBe(false);
 		expect(shouldCompact(70_001, 100_000, settings)).toBe(true);
 	});
@@ -285,6 +286,55 @@ describe("shouldCompact", () => {
 		};
 
 		expect(shouldCompact(95000, 100000, settings)).toBe(false);
+	});
+});
+
+describe("shouldCompactByIterations", () => {
+	const baseSettings: CompactionSettings = {
+		enabled: true,
+		reserveTokens: 16384,
+		keepRecentTokens: 20000,
+		iterationThreshold: 20,
+	};
+
+	it("should return true when iterations exceed threshold and context > 50%", () => {
+		// 60K out of 100K = 60% full, 25 turns > 20 threshold
+		expect(shouldCompactByIterations(25, 60000, 100000, baseSettings)).toBe(true);
+	});
+
+	it("should return false when iterations below threshold", () => {
+		expect(shouldCompactByIterations(19, 60000, 100000, baseSettings)).toBe(false);
+	});
+
+	it("should return false when context below 50%", () => {
+		// 40K out of 100K = 40% full, even with high iterations
+		expect(shouldCompactByIterations(30, 40000, 100000, baseSettings)).toBe(false);
+	});
+
+	it("should trigger at exactly the threshold (>= semantics)", () => {
+		expect(shouldCompactByIterations(20, 60000, 100000, baseSettings)).toBe(true);
+		expect(shouldCompactByIterations(19, 60000, 100000, baseSettings)).toBe(false);
+	});
+
+	it("should return false when disabled", () => {
+		const disabled = { ...baseSettings, enabled: false };
+		expect(shouldCompactByIterations(25, 60000, 100000, disabled)).toBe(false);
+	});
+
+	it("should return false when strategy is off", () => {
+		const off = { ...baseSettings, strategy: "off" as const };
+		expect(shouldCompactByIterations(25, 60000, 100000, off)).toBe(false);
+	});
+
+	it("should use custom iterationThreshold", () => {
+		const custom = { ...baseSettings, iterationThreshold: 10 };
+		expect(shouldCompactByIterations(10, 60000, 100000, custom)).toBe(true);
+		expect(shouldCompactByIterations(9, 60000, 100000, custom)).toBe(false);
+	});
+
+	it("should not fire when iterationThreshold is 0 (disabled)", () => {
+		const disabled = { ...baseSettings, iterationThreshold: 0 };
+		expect(shouldCompactByIterations(100, 90000, 100000, disabled)).toBe(false);
 	});
 });
 
