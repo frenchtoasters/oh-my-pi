@@ -477,6 +477,22 @@ When adding or changing tests, test the contract the system exposes — not the 
 - Do not add tests for tiny, low-risk changes unless the change affects a real contract, fixes a regression-prone edge case, or would otherwise be easy to break silently.
 - When trimming or adding tests, prefer focused package-local verification for the changed area so the surviving suite proves the contract it claims to protect.
 
+## Feature Integration Checklist
+
+Cross-cutting features **MUST** ship fully integrated — a config entry or module without enforcement wiring is incomplete.
+
+Before marking complete, verify:
+1. **Config schema** — defined in `settings-schema.ts`
+2. **Read site** — setting consumed at point of use
+3. **Session init** — wired in `sdk.ts` / `createAgentSession()` if stateful
+4. **Tool enforcement** — every affected tool checks it
+5. **Subagent propagation** — flows through `task/executor.ts` / `createSubagentSettings()`
+6. **System prompt** — model aware of behavioral constraints
+7. **SDK surface** — exposed if API-configurable
+8. **Lifecycle cleanup** — `dispose()` releases resources
+9. **Audit events** — emitted at enforcement points
+10. **Tests** — end-to-end, not just unit tests of the module
+
 ## GitHub Issues
 
 When reading issues:
