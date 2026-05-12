@@ -520,7 +520,7 @@ export class AgentSession {
 		deduplication: {
 			protectedTools: ["task", "skill", "todowrite", "todoread", "write", "edit", "read"],
 			protectedFilePatterns: [],
-			turnProtectionTurns: 2,
+			turnProtectionTurns: 4,
 		},
 		purgeErrors: {
 			turnThreshold: 4,

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Changed default `cacheRetention` from `"short"` (5-minute TTL) to `"long"` (1-hour TTL) for Anthropic prompt caching — eliminates cache expiry during typical inter-turn pauses at zero additional cost
+
 ## [14.7.2] - 2026-05-06
 
 ### Fixed

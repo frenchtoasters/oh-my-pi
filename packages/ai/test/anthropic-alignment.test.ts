@@ -181,7 +181,7 @@ describe("Anthropic request fingerprint alignment", () => {
 
 		expect(payload.system).toEqual([
 			{ type: "text", text: "stable system" },
-			{ type: "text", text: "stable durable context", cache_control: { type: "ephemeral" } },
+			{ type: "text", text: "stable durable context", cache_control: { type: "ephemeral", ttl: "1h" } },
 		]);
 	});
 

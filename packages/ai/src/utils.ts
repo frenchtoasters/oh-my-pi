@@ -137,12 +137,13 @@ export function getOpenAIResponsesHistoryItems(
 
 /**
  * Resolve cache retention preference.
- * Defaults to "short" and uses PI_CACHE_RETENTION for backward compatibility.
+ * Defaults to "long" (1-hour TTL). Use PI_CACHE_RETENTION env var to opt down to "short" or "none".
  */
 export function resolveCacheRetention(cacheRetention?: CacheRetention): CacheRetention {
 	if (cacheRetention) return cacheRetention;
-	if ($env.PI_CACHE_RETENTION === "long") return "long";
-	return "short";
+	if ($env.PI_CACHE_RETENTION === "none") return "none";
+	if ($env.PI_CACHE_RETENTION === "short") return "short";
+	return "long";
 }
 
 export function isAnthropicOAuthToken(key: string): boolean {

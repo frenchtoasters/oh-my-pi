@@ -9,6 +9,8 @@
 - Changed `compaction.idleTimeoutSeconds` default from 300s to 120s
 - Changed auto-compaction threshold reserve from 15% to 25% of context window — compaction now triggers at ~75% context usage instead of ~85%
 
+- Changed `turnProtectionTurns` from 2 to 4 — delays deduplication-induced prefix modifications by 2 extra turns, improving prompt cache hit rate
+
 ### Added
 
 - Added iteration-based compaction trigger (`compaction.iterationThreshold`, default: 15 turns) — compacts after N assistant turns even below the token threshold when context is >50% full
