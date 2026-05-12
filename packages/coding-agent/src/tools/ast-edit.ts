@@ -9,6 +9,7 @@ import { computeLineHash, HL_BODY_SEP } from "../edit/line-hash";
 import type { RenderResultOptions } from "../extensibility/custom-tools/types";
 import type { Theme } from "../modes/theme/theme";
 import astEditDescription from "../prompts/tools/ast-edit.md" with { type: "text" };
+import { enforceSandboxAccess } from "../security/sandbox";
 import { Ellipsis, Hasher, type RenderCache, renderStatusLine, renderTreeList, truncateToWidth } from "../tui";
 import { resolveFileDisplayMode } from "../utils/file-display-mode";
 import type { ToolSession } from ".";
@@ -254,6 +255,7 @@ export class AstEditTool implements AgentTool<typeof astEditSchema, AstEditToolD
 			}
 			const resolvedSearchPath = searchPath;
 			scopePath = scopePath ?? formatScopePath(resolvedSearchPath);
+			enforceSandboxAccess(this.session, resolvedSearchPath, "write");
 			let isDirectory: boolean;
 			try {
 				const stat = await Bun.file(resolvedSearchPath).stat();

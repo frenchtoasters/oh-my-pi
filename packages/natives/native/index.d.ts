@@ -115,6 +115,57 @@ export declare class PtySession {
   kill(): void
 }
 
+/**
+ * Capability set for sandboxing spawned processes.
+ *
+ * Build a capability set describing allowed filesystem paths and network
+ * access, then pass it to the Shell to enforce via `pre_exec`.
+ */
+export declare class SandboxCaps {
+  /** Create a new empty capability set (denies everything by default). */
+  constructor()
+  /**
+   * Add a directory path with the specified access mode.
+   *
+   * Returns a new `SandboxCaps` with the path added.
+   */
+  allowPath(path: string, mode: SandboxAccessMode): SandboxCaps
+  /** Block all network access. */
+  blockNetwork(): SandboxCaps
+  /** Restrict network to only the specified proxy port on localhost. */
+  proxyOnly(port: number): SandboxCaps
+  /**
+   * Query whether a path with the given access mode would be allowed.
+   *
+   * This is an advisory check — it does not apply the sandbox, just
+   * evaluates the capability set.
+   */
+  queryPath(path: string, mode: SandboxAccessMode): boolean
+  /** Get a human-readable summary of the capabilities. */
+  summary(): string
+}
+
+/**
+ * Network filtering proxy that runs in the main process.
+ *
+ * Provides domain-level HTTPS filtering via CONNECT tunnel.
+ * Child processes get `HTTPS_PROXY` pointed at this proxy and kernel-level
+ * network restriction to only reach the proxy port.
+ */
+export declare class SandboxProxy {
+  /** Create a new proxy instance (not yet started). */
+  constructor()
+  /**
+   * Start the proxy with the given allowed hosts.
+   *
+   * Hosts can be exact (`"api.openai.com"`) or wildcard (`"*.github.com"`).
+   * Returns the assigned port and environment variables to inject.
+   */
+  start(allowedHosts: Array<string>, options?: SandboxProxyOptions | undefined | null): SandboxProxyStartResult
+  /** Shut down the proxy gracefully. */
+  shutdown(): void
+}
+
 /** Persistent brush-core shell session. */
 export declare class Shell {
   /**
@@ -123,6 +174,13 @@ export declare class Shell {
    * The options set session-scoped environment variables and a snapshot path.
    */
   constructor(options?: ShellOptions | undefined | null)
+  /**
+   * Set sandbox capabilities for all commands spawned by this shell session.
+   *
+   * Must be called before the first `run()` call. The caps are applied via
+   * `pre_exec` to every external command spawned by the shell.
+   */
+  setSandbox(caps: SandboxCaps): void
   /**
    * Run a shell command using the provided options.
    *
@@ -1018,6 +1076,41 @@ export declare enum SamplingFilter {
   Lanczos3 = 5
 }
 
+/** Filesystem access mode for sandbox capabilities. */
+export declare enum SandboxAccessMode {
+  /** Read-only access. */
+  Read = 0,
+  /** Write-only access. */
+  Write = 1,
+  /** Read and write access. */
+  ReadWrite = 2
+}
+
+/** Check if OS-level sandboxing is supported on this platform. */
+export declare function sandboxIsSupported(): boolean
+
+/** A single environment variable key-value pair. */
+export interface SandboxProxyEnvVar {
+  /** Environment variable name. */
+  key: string
+  /** Environment variable value. */
+  value: string
+}
+
+/** Options for starting the sandbox proxy. */
+export interface SandboxProxyOptions {
+  /** Port to bind on (0 for OS-assigned ephemeral port). */
+  bindPort?: number
+}
+
+/** Result of starting the sandbox proxy. */
+export interface SandboxProxyStartResult {
+  /** The port the proxy is listening on. */
+  port: number
+  /** Environment variables to inject into child processes. */
+  envVars: Array<SandboxProxyEnvVar>
+}
+
 /**
  * Strip ANSI escape sequences, remove control characters / lone surrogates,
  * and normalize line endings.
@@ -1113,6 +1206,11 @@ export interface ShellOptions {
   snapshotPath?: string
   /** Optional per-command output minimizer configuration. */
   minimizer?: MinimizerOptions
+  /**
+   * Extra environment variables to inject into sandboxed commands.
+   * Used for proxy env vars (HTTP_PROXY, HTTPS_PROXY, etc).
+   */
+  sandboxEnv?: Record<string, string>
 }
 
 /** Options for running a shell command. */

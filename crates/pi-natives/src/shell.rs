@@ -83,6 +83,10 @@ struct ShellConfig {
 	session_env:   Option<HashMap<String, String>>,
 	snapshot_path: Option<String>,
 	minimizer:     Option<minimizer::MinimizerConfig>,
+	#[cfg(unix)]
+	sandbox_caps:  Option<crate::sandbox::SandboxCaps>,
+	#[cfg(unix)]
+	sandbox_env:   Option<Vec<(String, String)>>,
 }
 
 /// Options for configuring a persistent shell session.
@@ -94,6 +98,9 @@ pub struct ShellOptions {
 	pub snapshot_path: Option<String>,
 	/// Optional per-command output minimizer configuration.
 	pub minimizer:     Option<minimizer::MinimizerOptions>,
+	/// Extra environment variables to inject into sandboxed commands.
+	/// Used for proxy env vars (HTTP_PROXY, HTTPS_PROXY, etc).
+	pub sandbox_env:   Option<HashMap<String, String>>,
 }
 
 /// Options for running a shell command (internal, lifetime-free).
@@ -179,7 +186,15 @@ impl Shell {
 	/// The options set session-scoped environment variables and a snapshot path.
 	pub fn new(options: Option<ShellOptions>) -> Self {
 		let config = match options {
-			None => ShellConfig { session_env: None, snapshot_path: None, minimizer: None },
+			None => ShellConfig {
+				session_env:               None,
+				snapshot_path:             None,
+				minimizer:                 None,
+				#[cfg(unix)]
+				sandbox_caps:              None,
+				#[cfg(unix)]
+				sandbox_env:               None,
+			},
 			Some(opt) => {
 				let minimizer = opt
 					.minimizer
@@ -189,6 +204,10 @@ impl Shell {
 					session_env: opt.session_env,
 					snapshot_path: opt.snapshot_path,
 					minimizer,
+					#[cfg(unix)]
+					sandbox_caps: None,
+					#[cfg(unix)]
+					sandbox_env: opt.sandbox_env.map(|m| m.into_iter().collect()),
 				}
 			},
 		};
@@ -197,6 +216,16 @@ impl Shell {
 			abort_state: ShellAbortState::default(),
 			config,
 		}
+	}
+
+	/// Set sandbox capabilities for all commands spawned by this shell session.
+	///
+	/// Must be called before the first `run()` call. The caps are applied via
+	/// `pre_exec` to every external command spawned by the shell.
+	#[napi]
+	#[cfg(unix)]
+	pub fn set_sandbox(&mut self, caps: &crate::sandbox::SandboxCaps) {
+		self.config.sandbox_caps = Some(caps.clone());
 	}
 
 	/// Run a shell command using the provided options.
@@ -359,9 +388,13 @@ pub fn execute_shell<'env>(
 		.as_ref()
 		.map(minimizer::MinimizerConfig::from_options);
 	let config = ShellConfig {
-		session_env:   options.session_env,
-		snapshot_path: options.snapshot_path,
-		minimizer:     minimizer.clone(),
+		session_env:               options.session_env,
+		snapshot_path:             options.snapshot_path,
+		minimizer:                 minimizer.clone(),
+		#[cfg(unix)]
+		sandbox_caps:              None,
+		#[cfg(unix)]
+		sandbox_env:               None,
 	};
 	let run_config =
 		ShellRunConfig { command: options.command, cwd: options.cwd, env: options.env, minimizer };
@@ -576,6 +609,17 @@ async fn create_session(config: &ShellConfig) -> Result<ShellSessionCore> {
 
 	if let Some(snapshot_path) = config.snapshot_path.as_ref() {
 		source_snapshot(&mut shell, snapshot_path).await?;
+	}
+
+	// Apply sandbox capabilities to the shell for child process enforcement.
+	#[cfg(unix)]
+	{
+		if let Some(caps) = &config.sandbox_caps {
+			shell.sandbox_caps = Some(caps.inner.clone());
+		}
+		if let Some(env) = &config.sandbox_env {
+			shell.sandbox_env = env.clone();
+		}
 	}
 
 	Ok(ShellSessionCore { shell })

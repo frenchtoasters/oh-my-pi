@@ -15,6 +15,7 @@ import type { InternalUrl } from "../internal-urls/types";
 import { getLanguageFromPath, type Theme } from "../modes/theme/theme";
 import readDescription from "../prompts/tools/read.md" with { type: "text" };
 import type { ToolSession } from "../sdk";
+import { enforceSandboxAccess } from "../security/sandbox";
 import {
 	DEFAULT_MAX_BYTES,
 	DEFAULT_MAX_LINES,
@@ -542,6 +543,7 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 		const candidates = parseArchivePathCandidates(readPath);
 		for (const candidate of candidates) {
 			let absolutePath = resolveReadPath(candidate.archivePath, this.session.cwd);
+			enforceSandboxAccess(this.session, absolutePath, "read");
 			let suffixResolution: { from: string; to: string } | undefined;
 
 			try {
@@ -563,6 +565,7 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 					if (retryStat.isDirectory()) continue;
 
 					absolutePath = suffixMatch.absolutePath;
+					enforceSandboxAccess(this.session, absolutePath, "read");
 					suffixResolution = { from: candidate.archivePath, to: suffixMatch.displayPath };
 					return {
 						absolutePath,
@@ -584,6 +587,7 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 		const candidates = parseSqlitePathCandidates(readPath);
 		for (const candidate of candidates) {
 			let absolutePath = resolveReadPath(candidate.sqlitePath, this.session.cwd);
+			enforceSandboxAccess(this.session, absolutePath, "read");
 			let suffixResolution: { from: string; to: string } | undefined;
 
 			try {
@@ -609,6 +613,7 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 					if (!(await isSqliteFile(suffixMatch.absolutePath))) continue;
 
 					absolutePath = suffixMatch.absolutePath;
+					enforceSandboxAccess(this.session, absolutePath, "read");
 					suffixResolution = { from: candidate.sqlitePath, to: suffixMatch.displayPath };
 					return {
 						absolutePath,
@@ -1148,6 +1153,7 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 		const parsed = parseSel(localTarget.sel);
 
 		let absolutePath = resolveReadPath(localReadPath, this.session.cwd);
+		enforceSandboxAccess(this.session, absolutePath, "read");
 		let suffixResolution: { from: string; to: string } | undefined;
 
 		let isDirectory = false;

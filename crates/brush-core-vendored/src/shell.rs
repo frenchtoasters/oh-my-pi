@@ -114,6 +114,14 @@ pub struct Shell {
 
     /// Error formatter for customizing error display.
     error_formatter: ErrorFormatterHelper,
+
+    /// Sandbox capabilities for spawned external commands (unix only).
+    #[cfg(unix)]
+    pub sandbox_caps: Option<Arc<nono::CapabilitySet>>,
+
+    /// Extra environment variables injected into spawned commands (e.g. proxy env).
+    #[cfg(unix)]
+    pub sandbox_env: Vec<(String, String)>,
 }
 
 impl Clone for Shell {
@@ -145,6 +153,10 @@ impl Clone for Shell {
             key_bindings: self.key_bindings.clone(),
             history: self.history.clone(),
             error_formatter: self.error_formatter.clone(),
+            #[cfg(unix)]
+            sandbox_caps: self.sandbox_caps.clone(),
+            #[cfg(unix)]
+            sandbox_env: self.sandbox_env.clone(),
             depth: self.depth + 1,
         }
     }
@@ -378,6 +390,10 @@ impl Shell {
                 .error_formatter
                 .unwrap_or_else(|| Arc::new(Mutex::new(error::DefaultErrorFormatter::new()))),
             depth: 0,
+            #[cfg(unix)]
+            sandbox_caps: None,
+            #[cfg(unix)]
+            sandbox_env: vec![],
         };
 
         // Add in any open files provided.

@@ -438,6 +438,25 @@ function createSubagentSettings(baseSettings: Settings): Settings {
 	for (const key of Object.keys(SETTINGS_SCHEMA) as SettingPath[]) {
 		snapshot[key] = baseSettings.get(key);
 	}
+
+	// Remove sub-path keys that conflict with scalar parent keys.
+	// E.g. "security.sandbox" = "enforce" and "security.sandbox.profileOverrides" = {}
+	// cannot coexist in a nested object — setByPath for the child would destroy the
+	// parent scalar by replacing it with an intermediate object.
+	const keys = Object.keys(snapshot) as SettingPath[];
+	for (const key of keys) {
+		const value = snapshot[key];
+		if (value !== null && value !== undefined && typeof value !== "object") {
+			// This key holds a scalar; remove any sub-keys that would collide.
+			const prefix = `${key}.`;
+			for (const other of keys) {
+				if (other.startsWith(prefix)) {
+					delete snapshot[other];
+				}
+			}
+		}
+	}
+
 	return Settings.isolated({
 		...snapshot,
 		"async.enabled": false,
@@ -972,18 +991,23 @@ export async function runSubprocess(options: ExecutorOptions): Promise<SingleRes
 				skills: options.skills,
 				promptTemplates: options.promptTemplates,
 				systemPrompt: defaultPrompt => {
-					capturedStablePrefix = defaultPrompt.join("\n\n");
-					return [
-						prompt.render(subagentSystemPromptTemplate, {
-							base: capturedStablePrefix,
-							agent: agent.systemPrompt,
-							worktree: worktree ?? "",
-							outputSchema: normalizedOutputSchema,
-							contextFile: options.contextFile,
-							ircPeers: ircEnabled ? renderIrcPeerRoster(id) : "",
-							ircSelfId: ircEnabled ? id : "",
-						}),
-					];
+					const base = defaultPrompt.join("\n\n");
+					const rendered = prompt.render(subagentSystemPromptTemplate, {
+						base,
+						agent: agent.systemPrompt,
+						worktree: worktree ?? "",
+						outputSchema: normalizedOutputSchema,
+						contextFile: options.contextFile,
+						ircPeers: ircEnabled ? renderIrcPeerRoster(id) : "",
+						ircSelfId: ircEnabled ? id : "",
+					});
+					// Derive the stable prefix from the rendered output (post-format)
+					// rather than from the pre-render input, because format() is not
+					// idempotent — a second pass can strip blank lines at block boundaries.
+					const separator = "\n\n═══════════Acting as═══════════";
+					const splitIdx = rendered.indexOf(separator);
+					capturedStablePrefix = splitIdx >= 0 ? rendered.slice(0, splitIdx) : undefined;
+					return [rendered];
 				},
 				sessionManager,
 				hasUI: false,

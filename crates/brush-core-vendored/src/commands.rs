@@ -424,6 +424,19 @@ pub(crate) fn execute_external_command(
 		ChildSessionAction::None => {}
 	}
 
+	// Inject sandbox environment variables (e.g. HTTPS_PROXY for proxy mode).
+	#[cfg(unix)]
+	for (key, value) in &context.shell.sandbox_env {
+		cmd.env(key, value);
+	}
+
+	// Apply OS-level sandbox to the child process via pre_exec.
+	#[cfg(unix)]
+	if let Some(caps) = &context.shell.sandbox_caps {
+		use crate::sys::unix::commands::CommandSandboxExt;
+		cmd.apply_sandbox(caps.clone());
+	}
+
 	// When tracing is enabled, report.
 	tracing::debug!(
 		 target: trace_categories::COMMANDS,

@@ -93,6 +93,14 @@ import {
 	obfuscateMessages,
 	SecretObfuscator,
 } from "./secrets";
+import {
+	buildSandboxCaps,
+	resolveProfile,
+	type SandboxMode,
+	type SandboxProfile,
+	shutdownSandboxProxy,
+	startSandboxProxy,
+} from "./security/sandbox";
 import { AgentSession } from "./session/agent-session";
 import { AuthStorage } from "./session/auth-storage";
 import { convertToLlm } from "./session/messages";
@@ -1037,6 +1045,28 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			asyncJobManager,
 		};
 
+		// ── Sandbox initialization ──────────────────────────────────────────
+		const sandboxMode = settings.get("security.sandbox") as SandboxMode;
+		if (sandboxMode !== "off") {
+			const agentName = resolvedAgentDisplayName;
+			const profileOverrides = (settings.get("security.sandbox.profileOverrides") ?? {}) as Record<
+				string,
+				SandboxProfile
+			>;
+			const profile = resolveProfile(agentName, profileOverrides);
+
+			// Start proxy for domain-filtered network access (top-level only).
+			let proxyPort: number | undefined;
+			if (typeof profile.network === "object" && profile.network.allowedHosts && taskDepth === 0) {
+				const proxy = startSandboxProxy(profile.network.allowedHosts);
+				proxyPort = proxy.port;
+				toolSession.sandboxEnv = proxy.envVars;
+			}
+
+			toolSession.sandboxCaps = buildSandboxCaps(profile, cwd, proxyPort);
+			logger.debug("Sandbox initialized", { mode: sandboxMode, agent: agentName, profile });
+		}
+
 		// Initialize internal URL router for internal protocols (agent://, artifact://, memory://, skill://, rule://, mcp://, local://)
 		const internalRouter = new InternalUrlRouter();
 		const getArtifactsDir = () => sessionManager.getArtifactsDir();
@@ -1744,6 +1774,9 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 					await originalDispose();
 				} finally {
 					agentRegistry.unregister(resolvedAgentId);
+					if (taskDepth === 0) {
+						shutdownSandboxProxy();
+					}
 				}
 			};
 		}

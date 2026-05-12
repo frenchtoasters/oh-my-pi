@@ -33,6 +33,10 @@ export interface BashExecutorOptions {
 		originalText: string,
 		info: { filter: string; inputBytes: number; outputBytes: number },
 	) => Promise<string | undefined>;
+	/** Sandbox capabilities to enforce on spawned commands (OS-level isolation). */
+	sandboxCaps?: import("@oh-my-pi/pi-natives").SandboxCaps;
+	/** Sandbox proxy environment variables to inject into child processes. */
+	sandboxEnv?: Record<string, string>;
 }
 
 export interface BashResult {
@@ -126,7 +130,11 @@ export async function executeBash(command: string, options?: BashExecutorOptions
 			sessionEnv: shellEnv,
 			snapshotPath: snapshotPath ?? undefined,
 			minimizer,
+			sandboxEnv: options?.sandboxEnv,
 		});
+		if (options?.sandboxCaps) {
+			shellSession.setSandbox(options.sandboxCaps);
+		}
 		shellSessions.set(sessionKey, shellSession);
 	}
 	const userSignal = options?.signal;

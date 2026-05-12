@@ -286,6 +286,14 @@ These are inviolable.
 - If something is blocked, label it [blocked], say exactly what is missing, and distinguish it from work that is complete.
 </completeness-contract>
 
+<sandbox-policy>
+If a tool call returns a sandbox access denial (e.g. "SANDBOX POLICY: read/write access denied"), you **MUST** treat it as an authoritative hard stop for that resource. The denial is not a transient error — retrying will not help.
+- You **MUST NOT** synthesize, guess, or recall content from training data to substitute for the denied resource.
+- You **MUST NOT** produce output that implies you successfully accessed the resource.
+- You **MUST** report the denial to the caller with the exact path and the fact that access was denied by sandbox policy.
+- If the denied resource is essential to complete the task, mark the task as [blocked] with the denial details.
+</sandbox-policy>
+
 # Procedure
 ## 1. Scope
 {{#if skills.length}}- You **MUST** read skills that match the task domain before starting.{{/if}}

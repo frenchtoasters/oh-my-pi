@@ -8,6 +8,7 @@ import type { RenderResultOptions } from "../extensibility/custom-tools/types";
 import { createLspWritethrough, type FileDiagnosticsResult, type WritethroughCallback, writethroughNoop } from "../lsp";
 import { getLanguageFromPath, highlightCode, type Theme } from "../modes/theme/theme";
 import vimDescription from "../prompts/tools/vim.md" with { type: "text" };
+import { enforceSandboxAccess } from "../security/sandbox";
 import { CachedOutputBlock } from "../tui/output-block";
 import { renderStatusLine } from "../tui/status-line";
 import { VimBuffer } from "../vim/buffer";
@@ -485,6 +486,7 @@ export class VimTool implements AgentTool<typeof vimSchema, VimToolDetails> {
 
 	async #loadBuffer(targetPath: string): Promise<VimLoadedFile> {
 		const { absolutePath, displayPath } = normalizeTargetPath(targetPath, this.session.cwd);
+		enforceSandboxAccess(this.session, absolutePath, "read");
 		if (await isSqliteFile(absolutePath)) {
 			throw new ToolError("Edit tool in vim mode does not support SQLite targets in v1");
 		}
@@ -508,6 +510,7 @@ export class VimTool implements AgentTool<typeof vimSchema, VimToolDetails> {
 
 	async #saveBuffer(buffer: VimBuffer, options?: { force?: boolean }): Promise<VimSaveResult> {
 		enforcePlanModeWrite(this.session, buffer.displayPath, { op: buffer.baseFingerprint ? "update" : "create" });
+		enforceSandboxAccess(this.session, buffer.filePath, "write");
 		if (buffer.baseFingerprint) {
 			await assertEditableFile(buffer.filePath, buffer.displayPath);
 		}
