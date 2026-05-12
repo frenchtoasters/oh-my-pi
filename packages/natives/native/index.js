@@ -211,6 +211,8 @@ export const MacOSPowerAssertion = nativeBindings.MacOSPowerAssertion;
 export const PhotonImage = nativeBindings.PhotonImage;
 export const Process = nativeBindings.Process;
 export const PtySession = nativeBindings.PtySession;
+export const SandboxCaps = nativeBindings.SandboxCaps;
+export const SandboxProxy = nativeBindings.SandboxProxy;
 export const Shell = nativeBindings.Shell;
 
 // functions
@@ -240,6 +242,7 @@ export const projfsOverlayProbe = nativeBindings.projfsOverlayProbe;
 export const projfsOverlayStart = nativeBindings.projfsOverlayStart;
 export const projfsOverlayStop = nativeBindings.projfsOverlayStop;
 export const readImageFromClipboard = nativeBindings.readImageFromClipboard;
+export const sandboxIsSupported = nativeBindings.sandboxIsSupported;
 export const sanitizeText = nativeBindings.sanitizeText;
 export const search = nativeBindings.search;
 export const sliceWithWidth = nativeBindings.sliceWithWidth;
@@ -302,5 +305,10 @@ export const SamplingFilter = {
 	CatmullRom: 3,
 	Gaussian: 4,
 	Lanczos3: 5,
+};
+export const SandboxAccessMode = {
+	Read: 0,
+	Write: 1,
+	ReadWrite: 2,
 };
 // --- end generated native exports ---

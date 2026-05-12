@@ -10,6 +10,7 @@ import { Type } from "@sinclair/typebox";
 import type { RenderResultOptions } from "../extensibility/custom-tools/types";
 import type { Theme } from "../modes/theme/theme";
 import findDescription from "../prompts/tools/find.md" with { type: "text" };
+import { enforceSandboxAccess } from "../security/sandbox";
 import { type TruncationResult, truncateHead } from "../session/streaming-output";
 import {
 	Ellipsis,
@@ -142,6 +143,7 @@ export class FindTool implements AgentTool<typeof findSchema, FindToolDetails> {
 			const globPattern = multiPattern?.globPattern ?? parsedPattern?.globPattern ?? "**/*";
 			const searchPath = resolveToCwd(multiPattern?.basePath ?? parsedPattern?.basePath ?? ".", this.session.cwd);
 			const scopePath = multiPattern?.scopePath ?? formatScopePath(searchPath);
+			enforceSandboxAccess(this.session, searchPath, "read");
 
 			if (searchPath === "/") {
 				throw new ToolError("Searching from root directory '/' is not allowed");

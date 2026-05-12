@@ -2557,6 +2557,28 @@ export const SETTINGS_SCHEMA = {
 			description: "Consecutive auth failures before stopping the action",
 		},
 	},
+
+	"security.sandbox": {
+		type: "enum",
+		values: ["off", "warn", "enforce"],
+		default: "off",
+		ui: {
+			tab: "security",
+			label: "Process Sandbox",
+			description:
+				"OS-enforced sandboxing for spawned commands (Landlock/Seatbelt). 'warn' logs violations without blocking, 'enforce' blocks disallowed operations.",
+		},
+	},
+
+	"security.sandbox.profileOverrides": {
+		type: "record",
+		default: {} as Record<string, unknown>,
+		ui: {
+			tab: "security",
+			label: "Sandbox Profile Overrides",
+			description: "Per-agent sandbox profile overrides. Keys are agent names, values are SandboxProfile objects.",
+		},
+	},
 } as const;
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2797,6 +2819,8 @@ export interface SecuritySettings {
 	auditEnabled: boolean;
 	tlsRejectUnauthorized: boolean;
 	maxAuthFailures: number;
+	sandbox: "off" | "warn" | "enforce";
+	"sandbox.profileOverrides": Record<string, unknown>;
 }
 
 export type GroupPrefix = keyof GroupTypeMap;

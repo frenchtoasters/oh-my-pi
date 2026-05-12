@@ -228,6 +228,10 @@ export interface ToolSession {
 
 	/** Queue a hidden message to be injected at the next agent turn. */
 	queueDeferredMessage?(message: CustomMessage): void;
+	/** Active sandbox capabilities for in-process file tool enforcement. */
+	sandboxCaps?: import("@oh-my-pi/pi-natives").SandboxCaps;
+	/** Sandbox proxy environment variables to inject into shell child processes. */
+	sandboxEnv?: Record<string, string>;
 }
 
 export type ToolFactory = (session: ToolSession) => Tool | null | Promise<Tool | null>;

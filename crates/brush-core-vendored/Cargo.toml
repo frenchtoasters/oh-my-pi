@@ -99,6 +99,10 @@ version = "0.27.2"
 [dependencies.thiserror]
 version = "2.0.17"
 
+[target."cfg(unix)".dependencies.nono]
+version = "0.53"
+default-features = false
+
 [dependencies.tracing]
 version = "0.1.41"
 

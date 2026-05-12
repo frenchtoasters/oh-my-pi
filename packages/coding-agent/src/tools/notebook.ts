@@ -7,6 +7,7 @@ import { type Static, Type } from "@sinclair/typebox";
 import type { RenderResultOptions } from "../extensibility/custom-tools/types";
 import type { Theme } from "../modes/theme/theme";
 import type { ToolSession } from "../sdk";
+import { enforceSandboxAccess } from "../security/sandbox";
 import { Hasher, type RenderCache, renderCodeCell, renderStatusLine } from "../tui";
 import { resolveToCwd } from "./path-utils";
 import { formatCount, formatErrorMessage, PREVIEW_LIMITS } from "./render-utils";
@@ -82,6 +83,7 @@ export class NotebookTool implements AgentTool<typeof notebookSchema, NotebookTo
 	): Promise<AgentToolResult<NotebookToolDetails>> {
 		const { action, notebook_path, cell_index, content, cell_type } = params;
 		const absolutePath = resolveToCwd(notebook_path, this.session.cwd);
+		enforceSandboxAccess(this.session, absolutePath, "write");
 
 		return untilAborted(signal, async () => {
 			// Read and parse notebook

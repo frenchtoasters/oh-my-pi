@@ -393,6 +393,8 @@ export class BashTool implements AgentTool<BashToolSchema, BashToolDetails> {
 							void reportProgress(latestText, { async: { state: "running", jobId, type: "bash" } });
 						},
 						onMinimizedSave: originalText => saveBashOriginalArtifact(this.session, originalText),
+						sandboxCaps: this.session.sandboxCaps,
+						sandboxEnv: this.session.sandboxEnv,
 					});
 					const finalResult = this.#buildCompletedResult(
 						result,
@@ -665,6 +667,8 @@ export class BashTool implements AgentTool<BashToolSchema, BashToolDetails> {
 					artifactId,
 					onChunk: streamTailUpdates(tailBuffer, onUpdate),
 					onMinimizedSave: originalText => saveBashOriginalArtifact(this.session, originalText),
+					sandboxCaps: this.session.sandboxCaps,
+					sandboxEnv: this.session.sandboxEnv,
 				});
 		if (result.cancelled) {
 			if (signal?.aborted) {

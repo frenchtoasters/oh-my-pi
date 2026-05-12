@@ -9,6 +9,7 @@ import { type Static, Type } from "@sinclair/typebox";
 import type { RenderResultOptions } from "../extensibility/custom-tools/types";
 import type { Theme } from "../modes/theme/theme";
 import searchDescription from "../prompts/tools/search.md" with { type: "text" };
+import { enforceSandboxAccess } from "../security/sandbox";
 import { DEFAULT_MAX_COLUMN, type TruncationResult, truncateHead } from "../session/streaming-output";
 import { Ellipsis, Hasher, type RenderCache, renderStatusLine, renderTreeList, truncateToWidth } from "../tui";
 import { resolveFileDisplayMode } from "../utils/file-display-mode";
@@ -176,6 +177,7 @@ export class SearchTool implements AgentTool<typeof searchSchema, SearchToolDeta
 				globFilter = exactFilePaths || multiTargets ? undefined : multiSearchPath.glob;
 				scopePath = multiSearchPath.scopePath;
 			}
+			enforceSandboxAccess(this.session, searchPath, "read");
 			let isDirectory: boolean;
 			try {
 				const stat = await Bun.file(searchPath).stat();

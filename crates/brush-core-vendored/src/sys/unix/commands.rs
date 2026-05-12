@@ -1,6 +1,7 @@
-//! Command execution utilities.
+//! Command execution utilities (including sandbox application).
 
 use std::io;
+use std::sync::Arc;
 pub use std::os::unix::process::{CommandExt, ExitStatusExt};
 
 use command_fds::{CommandFdExt, FdMapping};
@@ -96,5 +97,35 @@ fn detach_session_before_exec() -> Result<(), io::Error> {
 		Ok(_) => Ok(()),
 		Err(nix::errno::Errno::EPERM) => Ok(()),
 		Err(errno) => Err(io::Error::from_raw_os_error(errno as i32)),
+	}
+}
+
+/// Extension trait for applying OS-level sandbox restrictions to a command.
+///
+/// Uses `pre_exec` to call `nono::Sandbox::apply()` in the forked child,
+/// before `exec()`. This is irreversible and inherits to all grandchildren.
+pub trait CommandSandboxExt {
+	/// Apply sandbox capabilities to this command. The sandbox will be
+	/// enforced in the child process after fork and before exec.
+	fn apply_sandbox(&mut self, caps: Arc<nono::CapabilitySet>);
+}
+
+impl CommandSandboxExt for std::process::Command {
+	fn apply_sandbox(&mut self, caps: Arc<nono::CapabilitySet>) {
+		// SAFETY:
+		// `pre_exec` runs in the forked child between fork() and exec().
+		// `nono::Sandbox::apply()` calls only Landlock/Seatbelt syscalls
+		// which are async-signal-safe on supported platforms.
+		unsafe {
+			self.pre_exec(move || {
+				nono::Sandbox::apply(&caps)
+					.map_err(|e| io::Error::other(format!("sandbox apply failed: {e}")))
+					// On platforms where sandbox is not supported (e.g. old kernels),
+					// we map the error but still let the process fail-to-start rather
+					// than run unsandboxed.
+					?;
+				Ok(())
+			});
+		}
 	}
 }

@@ -438,6 +438,25 @@ function createSubagentSettings(baseSettings: Settings): Settings {
 	for (const key of Object.keys(SETTINGS_SCHEMA) as SettingPath[]) {
 		snapshot[key] = baseSettings.get(key);
 	}
+
+	// Remove sub-path keys that conflict with scalar parent keys.
+	// E.g. "security.sandbox" = "enforce" and "security.sandbox.profileOverrides" = {}
+	// cannot coexist in a nested object — setByPath for the child would destroy the
+	// parent scalar by replacing it with an intermediate object.
+	const keys = Object.keys(snapshot) as SettingPath[];
+	for (const key of keys) {
+		const value = snapshot[key];
+		if (value !== null && value !== undefined && typeof value !== "object") {
+			// This key holds a scalar; remove any sub-keys that would collide.
+			const prefix = `${key}.`;
+			for (const other of keys) {
+				if (other.startsWith(prefix)) {
+					delete snapshot[other];
+				}
+			}
+		}
+	}
+
 	return Settings.isolated({
 		...snapshot,
 		"async.enabled": false,

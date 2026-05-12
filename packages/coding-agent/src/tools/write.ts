@@ -12,6 +12,7 @@ import { createLspWritethrough, type FileDiagnosticsResult, type WritethroughCal
 import { getLanguageFromPath, type Theme } from "../modes/theme/theme";
 import writeDescription from "../prompts/tools/write.md" with { type: "text" };
 import type { ToolSession } from "../sdk";
+import { enforceSandboxAccess } from "../security/sandbox";
 import { Ellipsis, Hasher, type RenderCache, renderStatusLine, truncateToWidth } from "../tui";
 import { resolveFileDisplayMode } from "../utils/file-display-mode";
 import { parseArchivePathCandidates } from "./archive-reader";
@@ -470,6 +471,7 @@ export class WriteTool implements AgentTool<typeof writeSchema, WriteToolDetails
 
 			enforcePlanModeWrite(this.session, path, { op: "create" });
 			const absolutePath = resolvePlanPath(this.session, path);
+			enforceSandboxAccess(this.session, absolutePath, "write");
 			const batchRequest = getLspBatchRequest(context?.toolCall);
 
 			// Check if file exists and is auto-generated before overwriting

@@ -15,6 +15,7 @@
 
 - Added iteration-based compaction trigger (`compaction.iterationThreshold`, default: 15 turns) — compacts after N assistant turns even below the token threshold when context is >50% full
 - Added tool output pruning before idle compaction to reduce unnecessary summarization calls
+- Added process sandbox (`security.sandbox` setting) for OS-enforced filesystem and network isolation of spawned commands via nono (Landlock/Seatbelt). Supports per-agent profiles with configurable path access and domain-level network filtering via nono-proxy.
 
 ## [14.7.2] - 2026-05-06
 ### Breaking Changes

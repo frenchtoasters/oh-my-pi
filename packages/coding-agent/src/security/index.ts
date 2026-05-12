@@ -4,6 +4,7 @@ export * from "./execution-policy";
 export * from "./fail-safe";
 export * from "./input-validation";
 export * from "./resource-limits";
+export * from "./sandbox";
 export * from "./self-test";
 export * from "./session-encryption";
 export * from "./session-management";
