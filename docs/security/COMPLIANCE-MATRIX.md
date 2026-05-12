@@ -2,13 +2,13 @@
 
 **Baseline**: NIST SP 800-53 Rev 5 HIGH Impact
 
-Last updated: 2026-05-07
+Last updated: 2026-05-12
 
 ## Summary
 
 | Status | Count |
 |---|---|
-| Satisfied | ~120 |
+| Satisfied | ~125 |
 | Not-applicable | ~230 |
 | Partial (with compensating) | ~20 |
 | **Total (HIGH baseline)** | **370** |
@@ -32,6 +32,8 @@ Last updated: 2026-05-07
 | AU-10 | Non-Repudiation | Implemented | Hash chain linking entries | `packages/utils/test/audit-integrity.test.ts` |
 | AU-12.1 | System-Wide Audit Trail | Implemented | sessionId correlation across components | `packages/utils/test/security-audit.test.ts` |
 | AC-3 | Access Enforcement | Implemented | `execution-policy.ts` allow/deny lists | `packages/coding-agent/test/security/` |
+| AC-4 | Information Flow Enforcement | Implemented | `packages/coding-agent/src/security/sandbox.ts` | `packages/coding-agent/test/security/sandbox.test.ts` |
+| AC-4.4 | Content Check (Information Flow) | Implemented | Domain-level network filtering via SandboxProxy | `packages/coding-agent/test/security/sandbox.test.ts` |
 | AC-6 | Least Privilege | Implemented | Strict mode: only allowed commands execute | `packages/coding-agent/test/security/` |
 | AC-6.9 | Log Privileged Functions | Implemented | TOOL_EXECUTION/CONFIG_CHANGE audit events | `packages/coding-agent/test/security/` |
 | AC-7 | Unsuccessful Logon Attempts | Implemented | `auth-failure-tracker.ts` lockout | `packages/ai/test/security/` |
@@ -43,12 +45,15 @@ Last updated: 2026-05-07
 | CM-8 | System Component Inventory | Implemented | CycloneDX SBOM generation | `sbom.cdx.json` |
 | SC-4 | Information in Shared Resources | Implemented | `CredentialEncryption.dispose()` zeroes buffers | `packages/coding-agent/test/security/fail-safe.test.ts` |
 | SC-5 | Denial of Service Protection | Implemented | `packages/coding-agent/src/security/resource-limits.ts` | `packages/coding-agent/test/security/integrity.test.ts` |
+| SC-7 | Boundary Protection | Implemented | `crates/pi-natives/src/sandbox.rs` (Landlock/Seatbelt) | `packages/coding-agent/test/security/sandbox.test.ts` |
+| SC-7.5 | Deny by Default | Implemented | SandboxCaps deny-all default, explicit allowPath() | `packages/coding-agent/test/security/sandbox.test.ts` |
 | SC-7.18 | Fail Secure | Implemented | `fail-safe.ts` degraded mode | `packages/coding-agent/test/security/fail-safe.test.ts` |
 | SC-8 | Transmission Confidentiality | Implemented | TLS 1.2+ via `tls-policy.ts` | `packages/ai/test/security/` |
 | SC-12 | Cryptographic Key Establishment | Implemented | `crypto-policy.ts` PBKDF2/AES-256-GCM | `packages/ai/test/security/` |
 | SC-13 | Cryptographic Protection | Implemented | Approved algorithms enforced | `packages/ai/test/security/` |
 | SC-24 | Fail in Known State | Implemented | `packages/coding-agent/src/security/fail-safe.ts` | `packages/coding-agent/test/security/fail-safe.test.ts` |
 | SC-28 | Protection of Information at Rest | Implemented | `session-encryption.ts` AES-256-GCM | `packages/coding-agent/test/security/` |
+| SC-39 | Process Isolation | Implemented | OS-level sandbox via pre_exec in forked child | `packages/coding-agent/test/security/sandbox.test.ts` |
 | SI-2 | Flaw Remediation | Implemented | bun audit + Dependabot | SBOM |
 | SI-6 | Security Function Verification | Implemented | `packages/coding-agent/src/security/self-test.ts` | `packages/coding-agent/test/security/integrity.test.ts` |
 | SI-7 | Software Integrity | Implemented | SBOM + config baseline hash | `scripts/generate-sbom.ts` |

@@ -77,6 +77,83 @@ Agent session state (in-process memory)
 
 ---
 
+## Process Sandbox
+
+**Control**: AC-4 (Information Flow Enforcement), SC-7 (Boundary Protection)
+
+### Architecture
+
+```
+  security.sandbox (mode: off | warn | enforce)
+  security.sandbox.profileOverrides
+      |
+  Profile Resolution
+      overrides -> built-in profiles -> fallback (CWD read-only)
+      |
+      +---------------------------+
+      |                           |
+  Kernel Enforcement         In-Process Enforcement
+      |                           |
+  SandboxCaps                SandboxCaps.queryPath()
+      |                           |
+  brush-core pre_exec         read / write / find /
+      |                       search / ast-edit tools
+  fork -> Landlock (Linux)
+          Seatbelt (macOS)
+  applied in child before exec
+      |
+  Network: SandboxProxy
+      -> localhost CONNECT tunnel
+      -> domain allowlist filter
+         (per-profile: blocked | allow-all | { allowedHosts })
+```
+
+**Kernel path**: `SandboxCaps` computes the profile for the spawned agent, passes it to `brush-core`'s `pre_exec` hook, which applies Landlock LSM rules (Linux) or Seatbelt sandbox(7) (macOS) inside the forked child before `exec`. The child process therefore never has an opportunity to open paths or make syscalls the profile does not permit.
+
+**In-process path**: File-touching tools (`read`, `write`, `find`, `search`, `ast-edit`) call `SandboxCaps.queryPath()` before performing any I/O. If the requested path falls outside the profile's `fs` grant list the tool returns a sandbox-denial error and a `PERMISSION_DENIED` audit event is emitted.
+
+**Network path**: Outbound TCP from sandboxed agents is routed through a `SandboxProxy` CONNECT tunnel running on localhost. The proxy enforces the profile's `network` constraint: `blocked` tears down the connection immediately; `allow-all` passes through; `{ allowedHosts }` performs domain matching before forwarding.
+
+### Built-in Profiles
+
+| Agent | Filesystem | Network |
+|---|---|---|
+| `explore` | `$CWD` read | blocked |
+| `reviewer` | `$CWD` read | blocked |
+| `librarian` | `$CWD` read, `$HOME/.bun` read | `registry.npmjs.org`, `*.crates.io`, `docs.rs`, `*.pypi.org` |
+| `plan` | `$CWD` read | blocked |
+| `designer` | `$CWD` read/write | blocked |
+| `task` | `$CWD` read/write, `$HOME/.bun` read, `$HOME/.cargo` read | blocked |
+| `quick_task` | `$CWD` read/write | blocked |
+| `init` | `$CWD` read/write | `registry.npmjs.org`, `*.crates.io` |
+
+Custom profiles are set via `security.sandbox.profileOverrides` in settings (key = agent type, value = `SandboxProfile`).
+
+### Trust Boundary Impact
+
+The process sandbox adds a hard boundary around tool execution. The updated trust diagram:
+
+```
+  [ User ]
+      |  stdin / TUI
+  [ Agent Process ]
+      |                                |
+  [ LLM Provider ]             [ Filesystem ]
+  (TLS 1.2+ required)          (~/.omp/ — owned by user)
+      |                                |
+  [ Network ]                  [ Session Transcripts ]
+  (SandboxProxy                (encrypted JSONL at rest)
+   domain filter)
+      .........................................
+      :  Sandbox Boundary                     :
+      :  [ Tool Execution ]                   :
+      :  Landlock / Seatbelt (kernel)         :
+      :  SandboxCaps.queryPath() (in-process) :
+      :.........................................:
+```
+
+---
+
 ## Threat Model (STRIDE)
 
 ### Spoofing
@@ -167,3 +244,5 @@ Minimum PBKDF2 iterations: 100,000 (asserted at runtime; default 210,000).
 | SC-12 | Crypto Key Management | `packages/ai/src/crypto-policy.ts` |
 | SC-13 | Cryptographic Protection | `packages/ai/src/crypto-policy.ts`, `CryptoParams` |
 | SC-28 | Data at Rest | `session-encryption.ts`, `packages/ai/src/credential-encryption.ts` |
+| AC-4 | Information Flow Enforcement | `packages/coding-agent/src/security/sandbox.ts` |
+| SC-7 | Boundary Protection | `crates/pi-natives/src/sandbox.rs` |
