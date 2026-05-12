@@ -972,18 +972,23 @@ export async function runSubprocess(options: ExecutorOptions): Promise<SingleRes
 				skills: options.skills,
 				promptTemplates: options.promptTemplates,
 				systemPrompt: defaultPrompt => {
-					capturedStablePrefix = defaultPrompt.join("\n\n");
-					return [
-						prompt.render(subagentSystemPromptTemplate, {
-							base: capturedStablePrefix,
-							agent: agent.systemPrompt,
-							worktree: worktree ?? "",
-							outputSchema: normalizedOutputSchema,
-							contextFile: options.contextFile,
-							ircPeers: ircEnabled ? renderIrcPeerRoster(id) : "",
-							ircSelfId: ircEnabled ? id : "",
-						}),
-					];
+					const base = defaultPrompt.join("\n\n");
+					const rendered = prompt.render(subagentSystemPromptTemplate, {
+						base,
+						agent: agent.systemPrompt,
+						worktree: worktree ?? "",
+						outputSchema: normalizedOutputSchema,
+						contextFile: options.contextFile,
+						ircPeers: ircEnabled ? renderIrcPeerRoster(id) : "",
+						ircSelfId: ircEnabled ? id : "",
+					});
+					// Derive the stable prefix from the rendered output (post-format)
+					// rather than from the pre-render input, because format() is not
+					// idempotent — a second pass can strip blank lines at block boundaries.
+					const separator = "\n\n═══════════Acting as═══════════";
+					const splitIdx = rendered.indexOf(separator);
+					capturedStablePrefix = splitIdx >= 0 ? rendered.slice(0, splitIdx) : undefined;
+					return [rendered];
 				},
 				sessionManager,
 				hasUI: false,
