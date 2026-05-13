@@ -479,7 +479,7 @@ describe("resolveModelRoleValue", () => {
 	});
 });
 describe("resolveAgentModelPatterns", () => {
-	test("falls back to the active session model when pi/task is unset", () => {
+	test("resolves pi/task to priority defaults when no user override", () => {
 		const settings = Settings.isolated({
 			modelRoles: { default: "anthropic/claude-sonnet-4-5" },
 		});
@@ -490,7 +490,7 @@ describe("resolveAgentModelPatterns", () => {
 			activeModelPattern: "openai/gpt-4o",
 		});
 
-		expect(result).toEqual(["openai/gpt-4o"]);
+		expect(result).toEqual(["sonnet-4.6", "sonnet-4.5", "sonnet-4", "gpt-5.1", "gemini-3-flash", "flash"]);
 	});
 
 	test("uses the configured task role before falling back to the session model", () => {
