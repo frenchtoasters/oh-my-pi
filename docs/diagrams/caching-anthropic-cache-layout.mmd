@@ -1,0 +1,12 @@
+graph TD
+    subgraph "Anthropic Prompt Cache Layout"
+        S1[System Prompt - breakpoint 1] --> S2[Tool Definitions - breakpoint 2]
+        S2 --> F[Frozen Messages - below frozenBeforeIndex]
+        F --> A[Active Messages - pruning zone]
+        A --> R[Recent Messages - breakpoints 3-4]
+    end
+    subgraph "Cache Stability"
+        CS1[computePruneState] -->|runs at agent_start, turn_end, post-compact| CS2[PruneState object]
+        CS2 -->|deterministic| CS3[applyPruneState on every LLM call]
+        CS3 -->|same input = same output| CS4[Cache prefix STABLE]
+    end

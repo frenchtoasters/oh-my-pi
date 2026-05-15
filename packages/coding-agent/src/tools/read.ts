@@ -169,6 +169,7 @@ async function streamLinesFromFile(
 	maxLinesToCollect: number,
 	maxBytes: number,
 	selectedLineLimit: number | null,
+	maxLineLength: number,
 	signal?: AbortSignal,
 ): Promise<{
 	lines: string[];
@@ -250,21 +251,27 @@ async function streamLinesFromFile(
 
 		if (!doneCollecting && lineIndex >= startLine) {
 			const separatorBytes = collectedLines.length > 0 ? 1 : 0;
+			const effectiveLineBytes =
+				maxLineLength > 0 ? Math.min(currentLineLength, maxLineLength * 4 + 20) : currentLineLength;
 			if (collectedLines.length >= maxLinesToCollect) {
 				doneCollecting = true;
-			} else if (collectedLines.length === 0 && currentLineLength > maxBytes) {
+			} else if (collectedLines.length === 0 && effectiveLineBytes > maxBytes) {
 				stoppedByByteLimit = true;
 				doneCollecting = true;
 				if (firstLineByteLength === undefined) {
 					firstLineByteLength = currentLineLength;
 				}
-			} else if (collectedLines.length > 0 && collectedBytes + separatorBytes + currentLineLength > maxBytes) {
+			} else if (collectedLines.length > 0 && collectedBytes + separatorBytes + effectiveLineBytes > maxBytes) {
 				stoppedByByteLimit = true;
 				doneCollecting = true;
 			} else {
 				const lineText = decodeLine();
-				collectedLines.push(lineText);
-				collectedBytes += separatorBytes + currentLineLength;
+				const truncatedLine =
+					maxLineLength > 0 && lineText.length > maxLineLength
+						? `${lineText.slice(0, maxLineLength)}\u2026[+${lineText.length - maxLineLength} chars]`
+						: lineText;
+				collectedLines.push(truncatedLine);
+				collectedBytes += separatorBytes + Buffer.byteLength(truncatedLine, "utf-8");
 				if (firstLineByteLength === undefined) {
 					firstLineByteLength = currentLineLength;
 				}
@@ -522,6 +529,7 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 	readonly #autoResizeImages: boolean;
 	readonly #defaultLimit: number;
 	readonly #inspectImageEnabled: boolean;
+	readonly #maxLineLength: number;
 
 	constructor(private readonly session: ToolSession) {
 		const displayMode = resolveFileDisplayMode(session);
@@ -531,6 +539,7 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 			Math.min(session.settings.get("read.defaultLimit") ?? DEFAULT_MAX_LINES, DEFAULT_MAX_LINES),
 		);
 		this.#inspectImageEnabled = session.settings.get("inspect_image.enabled");
+		this.#maxLineLength = Math.max(0, session.settings.get("read.maxLineLength") ?? 2000);
 		this.description = prompt.render(readDescription, {
 			DEFAULT_LIMIT: String(this.#defaultLimit),
 			DEFAULT_MAX_LINES: String(DEFAULT_MAX_LINES),
@@ -1329,6 +1338,7 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 					maxLinesToCollect,
 					maxBytesForRead,
 					selectedLineLimit,
+					this.#maxLineLength,
 					signal,
 				);
 
@@ -1418,7 +1428,10 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 					const nextOffset = startLine + userLimitedLines + 1;
 
 					outputText = formatText(truncation.content, startLineDisplay);
-					outputText += `\n\n[${remaining} more lines in file. Use :${nextOffset} to continue]`;
+					const taskHint = this.session.getToolByName?.("task")
+						? " For large files, prefer delegating to Task tool."
+						: "";
+					outputText += `\n\n[${remaining} more lines in file. Use :${nextOffset} to continue.${taskHint}]`;
 					details = {};
 					sourcePath = absolutePath;
 				} else {

@@ -1,0 +1,19 @@
+graph TD
+    A[User Prompt] --> B[Agent Session]
+    B --> C[transformContext]
+    C --> D[applyPruneState]
+    D --> E[LLM Request]
+    E --> F[Assistant Response]
+    F --> G{Check Triggers}
+    G -->|threshold 75%| H[Compaction Pipeline]
+    G -->|iteration 15| H
+    G -->|idle 120s| H
+    G -->|overflow| H
+    G -->|/compact| H
+    G -->|none| B
+    H --> I[Prune tool outputs]
+    I --> J[Find cut point]
+    J --> K[Summarize history]
+    K --> L[Replace messages]
+    L --> M[Recompute prune state]
+    M --> B

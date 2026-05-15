@@ -1,0 +1,9 @@
+graph TD
+    A[Raw Tool Output] --> B[Column Cap: 1024 chars/line]
+    B --> C[Line Cap: 3000 lines]
+    C --> D[Byte Cap: 50KB windowed tail]
+    D --> E[Middle Elision: head + tail bytes]
+    E --> F{Size > 30KB?}
+    F -->|No| G[Inline in context]
+    F -->|Yes| H[Spill to artifact://ID]
+    H --> I[Keep tail in context + reference]

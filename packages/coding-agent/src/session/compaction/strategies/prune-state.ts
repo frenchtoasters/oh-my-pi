@@ -27,6 +27,8 @@ export interface PruneState {
 	errorPurgedIds: ReadonlySet<string>;
 	/** IDs whose arguments and result should be stubbed (superseded writes). */
 	supersededIds: ReadonlySet<string>;
+	/** Message index threshold — tool calls at indices below this are frozen (not pruned). */
+	frozenBeforeIndex: number;
 }
 
 export function createEmptyPruneState(): PruneState {
@@ -34,6 +36,7 @@ export function createEmptyPruneState(): PruneState {
 		dedupRemovedIds: new Set(),
 		errorPurgedIds: new Set(),
 		supersededIds: new Set(),
+		frozenBeforeIndex: 0,
 	};
 }
 
@@ -51,31 +54,38 @@ function computeToolSignature(name: string, args: Record<string, unknown>): stri
  *
  * Call this at turn boundaries, not on every LLM request.
  */
-export function computePruneState(messages: AgentMessage[], currentTurn: number, config: PruneConfig): PruneState {
+export function computePruneState(
+	messages: AgentMessage[],
+	currentTurn: number,
+	config: PruneConfig,
+	frozenBeforeIndex = 0,
+): PruneState {
 	// --- Deduplication ---
-	const dedupRemovedIds = computeDeduplicationIds(messages, currentTurn, config.deduplication);
+	const dedupRemovedIds = computeDeduplicationIds(messages, currentTurn, config.deduplication, frozenBeforeIndex);
 
 	// --- Purge errors ---
 	// Compute against the original messages; IDs already in dedupRemovedIds will
 	// have been removed before the error-purge apply step runs, so they are inert.
-	const errorPurgedIds = computeErrorPurgeIds(messages, currentTurn, config.purgeErrors);
+	const errorPurgedIds = computeErrorPurgeIds(messages, currentTurn, config.purgeErrors, frozenBeforeIndex);
 
 	// --- Supersede writes ---
-	const supersededIds = computeSupersededIds(messages, config.supersedeWrites);
+	const supersededIds = computeSupersededIds(messages, config.supersedeWrites, frozenBeforeIndex);
 
-	return { dedupRemovedIds, errorPurgedIds, supersededIds };
+	return { dedupRemovedIds, errorPurgedIds, supersededIds, frozenBeforeIndex };
 }
 
 function computeDeduplicationIds(
 	messages: AgentMessage[],
 	currentTurn: number,
 	config: DeduplicationConfig,
+	frozenBeforeIndex: number,
 ): Set<string> {
 	const protectedGlobs = config.protectedFilePatterns.map(pattern => new Bun.Glob(pattern));
 
 	const signatureMap = new Map<string, { messageIndex: number; toolCallId: string; turn: number }[]>();
 
 	messages.forEach((msg, msgIndex) => {
+		if (msgIndex < frozenBeforeIndex) return;
 		if (msg.role === "assistant") {
 			msg.content.forEach(block => {
 				if (block.type === "toolCall") {
@@ -107,8 +117,14 @@ function computeDeduplicationIds(
 	return ids;
 }
 
-function computeErrorPurgeIds(messages: AgentMessage[], currentTurn: number, config: PurgeErrorsConfig): Set<string> {
+function computeErrorPurgeIds(
+	messages: AgentMessage[],
+	currentTurn: number,
+	config: PurgeErrorsConfig,
+	frozenBeforeIndex: number,
+): Set<string> {
 	const toolCallMeta = new Map<string, { tool: string; turn: number }>();
+	const toolCallMessageIndex = new Map<string, number>();
 
 	messages.forEach((msg, msgIndex) => {
 		if (msg.role === "assistant") {
@@ -116,6 +132,7 @@ function computeErrorPurgeIds(messages: AgentMessage[], currentTurn: number, con
 			msg.content.forEach(block => {
 				if (block.type === "toolCall") {
 					toolCallMeta.set(block.id, { tool: block.name, turn });
+					toolCallMessageIndex.set(block.id, msgIndex);
 				}
 			});
 		}
@@ -126,6 +143,8 @@ function computeErrorPurgeIds(messages: AgentMessage[], currentTurn: number, con
 		if (message.role === "toolResult" && message.isError) {
 			const meta = toolCallMeta.get(message.toolCallId);
 			if (!meta) continue;
+			const msgIdx = toolCallMessageIndex.get(message.toolCallId);
+			if (msgIdx === undefined || msgIdx < frozenBeforeIndex) continue;
 			if (config.protectedTools.includes(meta.tool)) continue;
 			if (currentTurn - meta.turn < config.turnThreshold) continue;
 			ids.add(message.toolCallId);
@@ -134,7 +153,11 @@ function computeErrorPurgeIds(messages: AgentMessage[], currentTurn: number, con
 	return ids;
 }
 
-function computeSupersededIds(messages: AgentMessage[], config: SupersedeWritesConfig): Set<string> {
+function computeSupersededIds(
+	messages: AgentMessage[],
+	config: SupersedeWritesConfig,
+	frozenBeforeIndex: number,
+): Set<string> {
 	const protectedGlobs = config.protectedFilePatterns.map(pattern => new Bun.Glob(pattern));
 
 	const lastReadIndex: Map<string, number> = new Map();
@@ -154,6 +177,7 @@ function computeSupersededIds(messages: AgentMessage[], config: SupersedeWritesC
 
 	const ids = new Set<string>();
 	for (let i = 0; i < messages.length; i++) {
+		if (i < frozenBeforeIndex) continue;
 		const msg = messages[i];
 		if (msg.role === "assistant") {
 			for (const content of msg.content) {

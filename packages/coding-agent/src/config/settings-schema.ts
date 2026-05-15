@@ -385,7 +385,7 @@ export const SETTINGS_SCHEMA = {
 	},
 	"tools.artifactSpillThreshold": {
 		type: "number",
-		default: 50,
+		default: 30,
 		ui: {
 			tab: "tools",
 			label: "Artifact spill threshold (KB)",
@@ -396,8 +396,8 @@ export const SETTINGS_SCHEMA = {
 				{ value: "5", label: "5 KB", description: "~1.25K tokens" },
 				{ value: "10", label: "10 KB", description: "~2.5K tokens" },
 				{ value: "20", label: "20 KB", description: "~5K tokens" },
-				{ value: "30", label: "30 KB", description: "~7.5K tokens" },
-				{ value: "50", label: "50 KB", description: "Default; ~12.5K tokens" },
+				{ value: "30", label: "30 KB", description: "Default; ~7.5K tokens" },
+				{ value: "50", label: "50 KB", description: "~12.5K tokens" },
 				{ value: "75", label: "75 KB", description: "~19K tokens" },
 				{ value: "100", label: "100 KB", description: "~25K tokens" },
 				{ value: "200", label: "200 KB", description: "~50K tokens" },
@@ -1481,7 +1481,7 @@ export const SETTINGS_SCHEMA = {
 
 	"read.defaultLimit": {
 		type: "number",
-		default: 500,
+		default: 300,
 		ui: {
 			tab: "editing",
 			label: "Default Read Limit",
@@ -1493,6 +1493,16 @@ export const SETTINGS_SCHEMA = {
 				{ value: "1000", label: "1000 lines" },
 				{ value: "5000", label: "5000 lines" },
 			],
+		},
+	},
+
+	"read.maxLineLength": {
+		type: "number",
+		default: 2000,
+		ui: {
+			tab: "editing",
+			label: "Max Line Length",
+			description: "Maximum characters per line in read output; longer lines are truncated with a suffix",
 		},
 	},
 

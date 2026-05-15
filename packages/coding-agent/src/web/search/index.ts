@@ -114,21 +114,6 @@ function formatForLLM(response: SearchResponse): string {
 		}
 	}
 
-	if (response.relatedQuestions && response.relatedQuestions.length > 0) {
-		parts.push("\n## Related");
-		parts.push(formatCount("question", response.relatedQuestions.length));
-		for (const q of response.relatedQuestions) {
-			parts.push(`- ${q}`);
-		}
-	}
-
-	if (response.searchQueries && response.searchQueries.length > 0) {
-		parts.push(`Search queries: ${response.searchQueries.length}`);
-		for (const query of response.searchQueries.slice(0, 3)) {
-			parts.push(`- ${truncateText(query, 120)}`);
-		}
-	}
-
 	return parts.join("\n");
 }
 

@@ -2,20 +2,23 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added freeze-prefix mechanism for prune state: messages in the stable prompt cache prefix are no longer retroactively modified by deduplication/error-purge/supersede-writes, improving Anthropic cache hit rate by ~5-10%
+- Added iteration-based compaction trigger (`compaction.iterationThreshold`, default: 15 turns) — compacts after N assistant turns even below the token threshold when context is >50% full
+- Added tool output pruning before idle compaction to reduce unnecessary summarization calls
+- Added process sandbox (`security.sandbox` setting) for OS-enforced filesystem and network isolation of spawned commands via nono (Landlock/Seatbelt). Supports per-agent profiles with configurable path access and domain-level network filtering via nono-proxy.
+
 ### Changed
 
 - Changed `compaction.idleEnabled` default from `false` to `true` — idle compaction now runs automatically when context exceeds the idle threshold
 - Changed `compaction.idleThresholdTokens` default from 200K to 100K tokens
 - Changed `compaction.idleTimeoutSeconds` default from 300s to 120s
 - Changed auto-compaction threshold reserve from 15% to 25% of context window — compaction now triggers at ~75% context usage instead of ~85%
-
 - Changed `turnProtectionTurns` from 2 to 4 — delays deduplication-induced prefix modifications by 2 extra turns, improving prompt cache hit rate
-
-### Added
-
-- Added iteration-based compaction trigger (`compaction.iterationThreshold`, default: 15 turns) — compacts after N assistant turns even below the token threshold when context is >50% full
-- Added tool output pruning before idle compaction to reduce unnecessary summarization calls
-- Added process sandbox (`security.sandbox` setting) for OS-enforced filesystem and network isolation of spawned commands via nono (Landlock/Seatbelt). Supports per-agent profiles with configurable path access and domain-level network filtering via nono-proxy.
+- Lowered default `read.defaultLimit` from 500 to 300 lines for better token efficiency (structural summaries cover full-file reads)
+- Lowered default `tools.artifactSpillThreshold` from 50KB to 30KB to reduce inline token consumption for large outputs
+- Lowered `purgeErrors.turnThreshold` from 4 to 2 turns for earlier cleanup of failed tool call arguments
 
 ## [14.7.2] - 2026-05-06
 ### Breaking Changes

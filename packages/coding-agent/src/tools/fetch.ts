@@ -31,7 +31,7 @@ import { clampTimeout } from "./tool-timeouts";
 // Types and Constants
 // =============================================================================
 
-const FETCH_DEFAULT_MAX_LINES = 300;
+const FETCH_DEFAULT_MAX_LINES = 200;
 // Convertible document types handled by markit.
 const CONVERTIBLE_MIMES = new Set([
 	"application/pdf",

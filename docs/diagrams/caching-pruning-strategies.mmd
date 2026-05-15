@@ -1,0 +1,15 @@
+graph LR
+    subgraph Strategies
+        A[Deduplication] -->|same tool + args| R1[Remove all but latest]
+        B[Error Purge] -->|isError=true| R2[Replace args with _pruned]
+        C[Supersede Writes] -->|write then read same file| R3[Replace write args with _pruned]
+    end
+    subgraph Guards
+        G1[4-turn protection window]
+        G2[Protected tools list]
+        G3[2-turn delay for errors]
+    end
+    A -.-> G1
+    A -.-> G2
+    B -.-> G3
+    B -.-> G2
