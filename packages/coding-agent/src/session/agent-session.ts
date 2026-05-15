@@ -516,6 +516,7 @@ export class AgentSession {
 	#extensionRunner: ExtensionRunner | undefined = undefined;
 	#turnIndex = 0;
 	#pruneState: PruneState = createEmptyPruneState();
+	#frozenBeforeIndex = 0;
 	#pruneConfig: PruneConfig = {
 		deduplication: {
 			protectedTools: ["task", "skill", "todowrite", "todoread", "write", "edit", "read"],
@@ -523,7 +524,7 @@ export class AgentSession {
 			turnProtectionTurns: 4,
 		},
 		purgeErrors: {
-			turnThreshold: 4,
+			turnThreshold: 2,
 			protectedTools: ["task", "skill", "todowrite", "todoread", "write", "edit", "read"],
 		},
 		supersedeWrites: {
@@ -1871,7 +1872,12 @@ export class AgentSession {
 
 	/** Recompute the stored prune state from the current message history. */
 	#recomputePruneState(): void {
-		this.#pruneState = computePruneState(this.agent.state.messages, this.#turnIndex, this.#pruneConfig);
+		this.#pruneState = computePruneState(
+			this.agent.state.messages,
+			this.#turnIndex,
+			this.#pruneConfig,
+			this.#frozenBeforeIndex,
+		);
 	}
 
 	/** Emit extension events based on session events */
@@ -1879,6 +1885,7 @@ export class AgentSession {
 		if (!this.#extensionRunner) return;
 		if (event.type === "agent_start") {
 			this.#turnIndex = 0;
+			this.#frozenBeforeIndex = this.agent.state.messages.length;
 			this.#recomputePruneState();
 			await this.#extensionRunner.emit({ type: "agent_start" });
 		} else if (event.type === "agent_end") {
@@ -4452,6 +4459,7 @@ export class AgentSession {
 			const newEntries = this.sessionManager.getEntries();
 			const sessionContext = this.buildDisplaySessionContext();
 			this.agent.replaceMessages(sessionContext.messages);
+			this.#frozenBeforeIndex = this.agent.state.messages.length;
 			this.#recomputePruneState();
 			this.#syncTodoPhasesFromBranch();
 			this.#closeCodexProviderSessionsForHistoryRewrite();
@@ -4824,7 +4832,11 @@ export class AgentSession {
 			// Try promotion first — if a larger model is available, switch instead of compacting
 			const promoted = await this.#tryContextPromotion(assistantMessage);
 			if (!promoted) {
-				await this.#runAutoCompaction("threshold", false);
+				// Skip auto-continue if the agent's response was a natural completion (no pending work).
+				// Compaction after a final stop is purely maintenance — there's nothing to resume.
+				const agentWasDone =
+					assistantMessage.stopReason === "stop" && !assistantMessage.content.some(c => c.type === "toolCall");
+				await this.#runAutoCompaction("threshold", false, false, agentWasDone);
 			}
 		}
 	}
@@ -5386,6 +5398,7 @@ export class AgentSession {
 		reason: "overflow" | "threshold" | "idle",
 		willRetry: boolean,
 		deferred = false,
+		skipAutoContinue = false,
 	): Promise<void> {
 		const compactionSettings = this.settings.getGroup("compaction");
 		if (compactionSettings.strategy === "off") return;
@@ -5396,7 +5409,7 @@ export class AgentSession {
 				async signal => {
 					await Promise.resolve();
 					if (signal.aborted) return;
-					await this.#runAutoCompaction(reason, willRetry, true);
+					await this.#runAutoCompaction(reason, willRetry, true, skipAutoContinue);
 				},
 				{ generation },
 			);
@@ -5444,7 +5457,12 @@ export class AgentSession {
 						aborted: false,
 						willRetry: false,
 					});
-					if (!autoCompactionSignal.aborted && reason !== "idle" && compactionSettings.autoContinue !== false) {
+					if (
+						!autoCompactionSignal.aborted &&
+						reason !== "idle" &&
+						!skipAutoContinue &&
+						compactionSettings.autoContinue !== false
+					) {
 						this.#scheduleAutoContinuePrompt(generation);
 					}
 					return;
@@ -5676,6 +5694,8 @@ export class AgentSession {
 			const newEntries = this.sessionManager.getEntries();
 			const sessionContext = this.buildDisplaySessionContext();
 			this.agent.replaceMessages(sessionContext.messages);
+			this.#frozenBeforeIndex = this.agent.state.messages.length;
+			this.#recomputePruneState();
 			this.#syncTodoPhasesFromBranch();
 			this.#closeCodexProviderSessionsForHistoryRewrite();
 
@@ -5702,7 +5722,7 @@ export class AgentSession {
 			};
 			await this.#emitSessionEvent({ type: "auto_compaction_end", action, result, aborted: false, willRetry });
 
-			if (!willRetry && reason !== "idle" && compactionSettings.autoContinue !== false) {
+			if (!willRetry && reason !== "idle" && !skipAutoContinue && compactionSettings.autoContinue !== false) {
 				this.#scheduleAutoContinuePrompt(generation);
 			}
 
