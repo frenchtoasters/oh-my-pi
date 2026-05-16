@@ -3,6 +3,7 @@ telemetry = false
 [install]
 linker = "hoisted"
 exact = true
+minimumReleaseAge = 1209600
 saveTextLockfile = true
 
 [loader]
