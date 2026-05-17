@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { getBundledModel } from "../src/models";
 import { convertMessages, detectCompat, streamOpenAICompletions } from "../src/providers/openai-completions";
+import { resolveOpenAICompat } from "../src/providers/openai-completions-compat";
 import type { AssistantMessage, Context, Model, OpenAICompat } from "../src/types";
 
 const originalFetch = global.fetch;
@@ -69,6 +70,7 @@ describe("openai-completions compatibility", () => {
 		const compat = {
 			supportsStore: true,
 			supportsDeveloperRole: true,
+			supportsMultipleSystemMessages: true,
 			supportsReasoningEffort: true,
 			reasoningEffortMap: {},
 			supportsUsageInStreaming: true,
@@ -177,6 +179,129 @@ describe("openai-completions compatibility", () => {
 		expect(unsupportedMessages.slice(0, 3)).toEqual([
 			{ role: "system", content: "stable instructions" },
 			{ role: "system", content: "cacheable policy" },
+			{ role: "user", content: "hello" },
+		]);
+	});
+
+	it("coalesces ordered system prompts when the host disables multi-system support", () => {
+		const model: Model<"openai-completions"> = {
+			...getBundledModel("openai", "gpt-4o-mini"),
+			api: "openai-completions",
+		};
+
+		const messages = convertMessages(
+			model,
+			{
+				systemPrompt: ["stable instructions", "cacheable policy"],
+				messages: [{ role: "user", content: "hello", timestamp: Date.now() }],
+			},
+			{ ...detectCompat(model), supportsMultipleSystemMessages: false },
+		);
+
+		expect(messages.slice(0, 2)).toEqual([
+			{ role: "system", content: "stable instructions\n\ncacheable policy" },
+			{ role: "user", content: "hello" },
+		]);
+	});
+
+	it("coalesces system prompts on a developer-role reasoning model when multi-system is disabled", () => {
+		const model: Model<"openai-completions"> = {
+			...getBundledModel("openai", "gpt-4o-mini"),
+			api: "openai-completions",
+			reasoning: true,
+		};
+
+		const messages = convertMessages(
+			model,
+			{
+				systemPrompt: ["stable instructions", "cacheable policy"],
+				messages: [{ role: "user", content: "hello", timestamp: Date.now() }],
+			},
+			{ ...detectCompat(model), supportsMultipleSystemMessages: false },
+		);
+
+		expect(messages.slice(0, 2)).toEqual([
+			{ role: "developer", content: "stable instructions\n\ncacheable policy" },
+			{ role: "user", content: "hello" },
+		]);
+	});
+
+	it("emits separate system prompts for an unknown OpenAI-compatible host when explicitly enabled", () => {
+		const model: Model<"openai-completions"> = {
+			...getBundledModel("openai", "gpt-4o-mini"),
+			api: "openai-completions",
+			provider: "custom" as Model["provider"],
+			baseUrl: "https://example.invalid/v1",
+		};
+
+		const detected = detectCompat(model);
+		expect(detected.supportsMultipleSystemMessages).toBe(false);
+
+		const overridden = convertMessages(
+			model,
+			{
+				systemPrompt: ["stable instructions", "cacheable policy"],
+				messages: [{ role: "user", content: "hello", timestamp: Date.now() }],
+			},
+			{ ...detected, supportsMultipleSystemMessages: true },
+		);
+
+		expect(overridden.slice(0, 3)).toEqual([
+			{ role: "system", content: "stable instructions" },
+			{ role: "system", content: "cacheable policy" },
+			{ role: "user", content: "hello" },
+		]);
+	});
+
+	it("auto-detects MiniMax OpenAI hosts as single-system to satisfy error 2013", () => {
+		const model: Model<"openai-completions"> = {
+			...getBundledModel("openai", "gpt-4o-mini"),
+			api: "openai-completions",
+			provider: "minimax-code" as Model["provider"],
+			baseUrl: "https://api.minimax.io/v1",
+		};
+
+		const detected = detectCompat(model);
+		expect(detected.supportsMultipleSystemMessages).toBe(false);
+
+		const messages = convertMessages(
+			model,
+			{
+				systemPrompt: ["stable instructions", "cacheable policy"],
+				messages: [{ role: "user", content: "hello", timestamp: Date.now() }],
+			},
+			detected,
+		);
+
+		expect(messages.slice(0, 2)).toEqual([
+			{ role: "system", content: "stable instructions\n\ncacheable policy" },
+			{ role: "user", content: "hello" },
+		]);
+	});
+
+	it("respects an explicit compat override for strict-template local providers", () => {
+		const model: Model<"openai-completions"> = {
+			...getBundledModel("openai", "gpt-4o-mini"),
+			api: "openai-completions",
+			provider: "custom" as Model["provider"],
+			baseUrl: "https://my-vllm.local/v1",
+			compat: {
+				supportsDeveloperRole: false,
+				supportsMultipleSystemMessages: false,
+			},
+		};
+
+		const messages = convertMessages(
+			model,
+			{
+				systemPrompt: ["stable instructions", "cacheable policy"],
+				messages: [{ role: "user", content: "hello", timestamp: Date.now() }],
+			},
+			resolveOpenAICompat(model),
+		);
+
+		expect(messages.slice(0, 2)).toEqual([
+			{ role: "system", content: "stable instructions\n\ncacheable policy" },
 			{ role: "user", content: "hello" },
 		]);
 	});
@@ -300,7 +425,7 @@ describe("openai-completions compatibility", () => {
 		);
 	});
 
-	it("preserves the streamed reasoning field name for follow-up requests", async () => {
+	it("preserves the streamed reasoning field name when replay requires reasoning content", async () => {
 		const model: Model<"openai-completions"> = {
 			...getBundledModel("openai", "gpt-4o-mini"),
 			api: "openai-completions",
@@ -335,7 +460,8 @@ describe("openai-completions compatibility", () => {
 			thinkingSignature: "reasoning_text",
 		});
 
-		const messages = convertMessages(model, { messages: [result] }, detectCompat(model));
+		const compat = { ...detectCompat(model), requiresReasoningContentForToolCalls: true };
+		const messages = convertMessages(model, { messages: [result] }, compat);
 		const assistant = messages.find(message => message.role === "assistant");
 		expect(assistant).toBeDefined();
 		const assistantObject = toObject(assistant);
@@ -357,19 +483,115 @@ describe("kimi model detection via detectCompat", () => {
 		};
 	}
 
-	it("requires reasoning_content for tool calls on kimi-k2.5 (opencode-go)", () => {
+	function kimiMoonshotModel(id: string): Model<"openai-completions"> {
+		return {
+			...getBundledModel("openai", "gpt-4o-mini"),
+			api: "openai-completions",
+			provider: "moonshot",
+			baseUrl: "https://api.moonshot.ai/v1",
+			id,
+			reasoning: true,
+		};
+	}
+
+	// Regression for #1071: OpenCode-Go/Zen handle reasoning content server-side
+	// and reject client-supplied `reasoning_content` ("Extra inputs are not
+	// permitted"). Kimi on opencode-* MUST NOT have reasoning_content injected,
+	// even though it's still recognized as a Kimi model for other quirks.
+	it("does not require reasoning_content for tool calls on kimi-k2.5 (opencode-go)", () => {
 		const compat = detectCompat(kimiOpenCodeModel("kimi-k2.5"));
-		expect(compat.requiresReasoningContentForToolCalls).toBe(true);
+		expect(compat.requiresReasoningContentForToolCalls).toBe(false);
+		// Kimi-specific quirks still apply even on opencode hosts.
 		expect(compat.requiresAssistantContentForToolCalls).toBe(true);
 	});
 
-	it("injects reasoning_content placeholder when assistant with tool calls has no reasoning field", () => {
+	it("does not inject reasoning_content placeholder for kimi on opencode-go", () => {
 		const model = kimiOpenCodeModel("kimi-k2.5");
 		const compat = detectCompat(model);
 		const toolCallMessage: AssistantMessage = {
 			role: "assistant",
 			content: [
-				// Thinking returned as plain text (as kimi-k2.5 on opencode-go does)
+				{ type: "text", text: "Let me research this." },
+				{
+					type: "toolCall",
+					id: "call_abc123",
+					name: "web_search",
+					arguments: { query: "beads gastownhall" },
+				},
+			],
+			api: model.api,
+			provider: model.provider,
+			model: model.id,
+			usage: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "toolUse",
+			timestamp: Date.now(),
+		};
+		const messages = convertMessages(model, { messages: [toolCallMessage] }, compat);
+		const assistant = messages.find(m => m.role === "assistant");
+		expect(assistant).toBeDefined();
+		expect(Reflect.get(assistant as object, "reasoning_content")).toBeUndefined();
+	});
+
+	it("does not replay streamed reasoning fields for kimi on opencode-go", () => {
+		const model = kimiOpenCodeModel("kimi-k2.6");
+		const compat = detectCompat(model);
+		const toolCallMessage: AssistantMessage = {
+			role: "assistant",
+			content: [
+				{ type: "text", text: "." },
+				{
+					type: "thinking",
+					thinking: "The user wants to install...",
+					thinkingSignature: "reasoning",
+				},
+				{
+					type: "toolCall",
+					id: "call_abc123",
+					name: "bash",
+					arguments: { command: "echo ok" },
+				},
+			],
+			api: model.api,
+			provider: model.provider,
+			model: model.id,
+			usage: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "toolUse",
+			timestamp: Date.now(),
+		};
+
+		expect(compat.requiresReasoningContentForToolCalls).toBe(false);
+		const messages = convertMessages(model, { messages: [toolCallMessage] }, compat);
+		const assistant = messages.find(m => m.role === "assistant");
+		const assistantObject = toObject(assistant);
+		expect(assistantObject).toBeDefined();
+		if (!assistantObject) {
+			throw new Error("assistant message missing");
+		}
+		expect(Reflect.get(assistantObject, "reasoning")).toBeUndefined();
+		expect(Reflect.get(assistantObject, "reasoning_content")).toBeUndefined();
+		expect(Reflect.get(assistantObject, "reasoning_text")).toBeUndefined();
+	});
+
+	it("injects reasoning_content placeholder when kimi-on-moonshot has tool calls without reasoning field", () => {
+		const model = kimiMoonshotModel("kimi-k2.5");
+		const compat = detectCompat(model);
+		const toolCallMessage: AssistantMessage = {
+			role: "assistant",
+			content: [
 				{ type: "text", text: "Let me research this." },
 				{
 					type: "toolCall",
@@ -401,6 +623,49 @@ describe("kimi model detection via detectCompat", () => {
 		expect((reasoningContent as string).length).toBeGreaterThan(0);
 	});
 
+	it("injects reasoning_content placeholder for direct Moonshot Kimi after thinking-disabled forced tool calls", () => {
+		const model: Model<"openai-completions"> = {
+			...getBundledModel("openai", "gpt-4o-mini"),
+			api: "openai-completions",
+			provider: "moonshot",
+			baseUrl: "https://api.moonshot.ai/v1",
+			id: "kimi-k2.6",
+			reasoning: false,
+		};
+		const compat = detectCompat(model);
+		const toolCallMessage: AssistantMessage = {
+			role: "assistant",
+			content: [
+				{
+					type: "toolCall",
+					id: "call_abc123",
+					name: "resolve",
+					arguments: { action: "apply", reason: "approved" },
+				},
+			],
+			api: model.api,
+			provider: model.provider,
+			model: model.id,
+			usage: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "toolUse",
+			timestamp: Date.now(),
+		};
+
+		expect(compat.thinkingFormat).toBe("zai");
+		expect(compat.requiresReasoningContentForToolCalls).toBe(true);
+		const messages = convertMessages(model, { messages: [toolCallMessage] }, compat);
+		const assistant = messages.find(m => m.role === "assistant");
+		expect(assistant).toBeDefined();
+		expect(Reflect.get(assistant as object, "reasoning_content")).toBe(".");
+	});
+
 	it("does not inject reasoning_content when model is not kimi", () => {
 		const model: Model<"openai-completions"> = {
 			...getBundledModel("openai", "gpt-4o-mini"),
@@ -411,10 +676,15 @@ describe("kimi model detection via detectCompat", () => {
 		};
 		const compat = detectCompat(model);
 		expect(compat.requiresReasoningContentForToolCalls).toBe(false);
+		expect(compat.requiresAssistantContentForToolCalls).toBe(false);
 	});
 
+	// `requiresAssistantContentForToolCalls` keys directly off isKimiModel and
+	// is provider-agnostic, so it's the cleanest signal that the id-pattern
+	// match recognizes every Kimi variant.
 	it.each(["kimi-k2.5", "kimi-k1.5", "kimi-k2-5"])("matches kimi model id: %s", id => {
-		const compat = detectCompat(kimiOpenCodeModel(id));
+		const compat = detectCompat(kimiMoonshotModel(id));
+		expect(compat.requiresAssistantContentForToolCalls).toBe(true);
 		expect(compat.requiresReasoningContentForToolCalls).toBe(true);
 	});
 
