@@ -1171,10 +1171,6 @@ export class AgentSession {
 			}
 			this.#resolveRetry();
 
-			if (msg.stopReason === "aborted" && this.#checkpointState) {
-				this.#checkpointState = undefined;
-				this.#pendingRewindReport = undefined;
-			}
 			const compactionTask = this.#checkCompaction(msg);
 			this.#trackPostPromptTask(compactionTask);
 			await compactionTask;
