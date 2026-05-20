@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed `tool_choice: "none"` being sent when the resolved `tools` array is empty, which caused LiteLLM/Bedrock 400 errors ([#1227](https://github.com/can1357/oh-my-pi/issues/1227))
+
 ### Changed
 
 - Changed default `cacheRetention` from `"short"` (5-minute TTL) to `"long"` (1-hour TTL) for Anthropic prompt caching — eliminates cache expiry during typical inter-turn pauses at zero additional cost
