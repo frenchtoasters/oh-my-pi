@@ -208,7 +208,6 @@ export type AgentSessionEvent =
 	| { type: "retry_fallback_succeeded"; model: string; role: string }
 	| { type: "ttsr_triggered"; rules: Rule[] }
 	| { type: "todo_reminder"; todos: TodoItem[]; attempt: number; maxAttempts: number }
-	| { type: "todo_auto_clear" }
 	| { type: "irc_message"; message: CustomMessage }
 	| { type: "notice"; level: "info" | "warning" | "error"; message: string; source?: string };
 
@@ -404,9 +403,7 @@ function formatRetryFallbackBaseSelector(selector: RetryFallbackSelector): strin
 	return `${selector.provider}/${selector.id}`;
 }
 
-/** Composite key for auto-clear timers, keyed by phase name + task content. */
-function todoClearKey(phaseName: string, taskContent: string): string {
-	return `${phaseName}\u0000${taskContent}`;
+
 }
 
 const noOpUIContext: ExtensionUIContext = {
@@ -491,7 +488,6 @@ export class AgentSession {
 	// Todo completion reminder state
 	#todoReminderCount = 0;
 	#todoPhases: TodoPhase[] = [];
-	#todoClearTimers = new Map<string, Timer>();
 	#toolChoiceQueue = new ToolChoiceQueue();
 
 	// Bash execution state
@@ -2060,7 +2056,6 @@ export class AgentSession {
 			logger.warn("Failed to emit session_shutdown event", { error: String(error) });
 		}
 		await this.#cancelPostPromptTasks();
-		this.#clearTodoClearTimers();
 		const drained = await this.#asyncJobManager?.dispose({ timeoutMs: 3_000 });
 		const deliveryState = this.#asyncJobManager?.getDeliveryState();
 		if (drained === false && deliveryState) {
@@ -3708,13 +3703,12 @@ export class AgentSession {
 
 	setTodoPhases(phases: TodoPhase[]): void {
 		this.#todoPhases = this.#cloneTodoPhases(phases);
-		this.#scheduleTodoAutoClear(phases);
 	}
 
 	#syncTodoPhasesFromBranch(): void {
 		const phases = getLatestTodoPhasesFromEntries(this.sessionManager.getBranch());
 		// Strip completed/abandoned tasks — they were done in a previous run,
-		// so the auto-clear grace period has already elapsed.
+		// so they have no bearing on progress tracking for the new turn.
 		for (const phase of phases) {
 			phase.tasks = phase.tasks.filter(t => t.status !== "completed" && t.status !== "abandoned");
 		}
@@ -3732,67 +3726,11 @@ export class AgentSession {
 		}));
 	}
 
-	/** Schedule auto-removal of completed/abandoned tasks after a delay. */
-	#scheduleTodoAutoClear(phases: TodoPhase[]): void {
-		const delaySec = this.settings.get("tasks.todoClearDelay") ?? 60;
-		if (delaySec < 0) return; // "Never" — no auto-clear
-		const delayMs = delaySec * 1000;
-		const doneKeys = new Set<string>();
-		for (const phase of phases) {
-			for (const task of phase.tasks) {
-				if (task.status === "completed" || task.status === "abandoned") {
-					doneKeys.add(todoClearKey(phase.name, task.content));
-				}
-			}
-		}
-
-		// Cancel timers for tasks that are no longer done (e.g. status was reverted)
-		for (const [key, timer] of this.#todoClearTimers) {
-			if (!doneKeys.has(key)) {
-				clearTimeout(timer);
-				this.#todoClearTimers.delete(key);
-			}
-		}
-
-		// Schedule new timers for newly-done tasks
-		for (const key of doneKeys) {
-			if (this.#todoClearTimers.has(key)) continue;
-			if (delayMs === 0) {
-				// Instant — run synchronously on next microtask to batch removals
-				const timer = setTimeout(() => this.#runTodoAutoClear(key), 0);
-				this.#todoClearTimers.set(key, timer);
-			} else {
-				const timer = setTimeout(() => this.#runTodoAutoClear(key), delayMs);
-				this.#todoClearTimers.set(key, timer);
-			}
-		}
-	}
-
-	/** Remove a single completed task and notify the UI. */
-	#runTodoAutoClear(key: string): void {
-		this.#todoClearTimers.delete(key);
-		let removed = false;
-		for (const phase of this.#todoPhases) {
-			const idx = phase.tasks.findIndex(t => todoClearKey(phase.name, t.content) === key);
-			if (idx !== -1 && (phase.tasks[idx].status === "completed" || phase.tasks[idx].status === "abandoned")) {
-				phase.tasks.splice(idx, 1);
-				removed = true;
-				break;
-			}
-		}
-		if (!removed) return;
-
-		// Remove empty phases
-		this.#todoPhases = this.#todoPhases.filter(p => p.tasks.length > 0);
-		this.#emit({ type: "todo_auto_clear" });
-	}
-
-	#clearTodoClearTimers(): void {
-		for (const timer of this.#todoClearTimers.values()) {
-			clearTimeout(timer);
-		}
-		this.#todoClearTimers.clear();
-	}
+	// Auto-clear of completed/abandoned tasks was removed: the timer-driven
+	// splice mutated canonical `#todoPhases` between tool calls, so the model
+	// observed phase totals shrinking ("5 → 4") after marking tasks done. The
+	// `tasks.todoClearDelay` setting is now inert; completed tasks survive
+	// until the next explicit `todo_write` call removes them via `rm`/`drop`.
 
 	/**
 	 * Abort current operation and wait for agent to become idle.
