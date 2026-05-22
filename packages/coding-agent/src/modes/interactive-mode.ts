@@ -534,6 +534,28 @@ export class InteractiveMode implements InteractiveModeContext {
 		}
 	}
 
+	#deferLoopAutoSubmit(fn: () => void): void {
+		this.#cancelLoopAutoSubmit();
+		this.#loopAutoSubmitTimer = setTimeout(fn, 500);
+	}
+
+	#isLoopAutoSubmitBlocked(): boolean {
+		return this.session.isStreaming || this.session.isCompacting || this.session.hasPostPromptWork;
+	}
+
+	#submitLoopPromptWhenReady(prompt: string): void {
+		if (!this.loopModeEnabled || this.loopPrompt !== prompt || !this.onInputCallback) return;
+		if (isLoopDurationExpired(this.loopLimit)) {
+			this.disableLoopMode();
+			return;
+		}
+		if (this.#isLoopAutoSubmitBlocked()) {
+			this.#deferLoopAutoSubmit(() => this.#submitLoopPromptWhenReady(prompt));
+			return;
+		}
+		this.onInputCallback(this.startPendingSubmission({ text: prompt }));
+	}
+
 	async #runLoopIteration(action: "prompt" | "compact" | "reset", prompt: string): Promise<void> {
 		if (action === "compact") {
 			await this.handleCompactCommand();
