@@ -23,10 +23,6 @@ export interface WorktreeBaseline {
 	nested: Array<{ relativePath: string; baseline: RepoBaseline }>;
 }
 
-export function getEncodedProjectName(cwd: string): string {
-	return `--${cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
-}
-
 export async function getRepoRoot(cwd: string): Promise<string> {
 	const repoRoot = await git.repo.root(cwd);
 	if (!repoRoot) {
@@ -401,8 +397,7 @@ export async function ensureProjfsOverlay(baseCwd: string, id: string): Promise<
 	}
 
 	const repoRoot = await getRepoRoot(baseCwd);
-	const encodedProject = getEncodedProjectName(repoRoot);
-	const baseDir = getWorktreeDir(encodedProject, id);
+	const baseDir = getWorktreeDir(`${id}-${hashPath(repoRoot)}`);
 	const mergedDir = path.join(baseDir, "merged");
 
 	await fs.rm(baseDir, { recursive: true, force: true });

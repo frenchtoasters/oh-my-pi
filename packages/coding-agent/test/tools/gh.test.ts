@@ -11,6 +11,28 @@ import { wrapToolWithMetaNotice } from "@oh-my-pi/pi-coding-agent/tools/output-m
 import * as git from "@oh-my-pi/pi-coding-agent/utils/git";
 import { getAgentDir, setAgentDir } from "@oh-my-pi/pi-utils";
 
+// Isolate every `git` invocation in this file from the developer's host
+// configuration. The fixture spawns dozens of git subprocesses against tiny
+// throwaway repos; any leak from `~/.gitconfig` or system config (LFS filters,
+// commit signing, hook paths, credential helpers, custom default branches)
+// turns "git add" / "git commit" / "git push" into prompts or hard failures
+// that are unrelated to what we're testing.
+//
+// Set these on `process.env` so they apply to both the local `runGit` helper
+// AND the impl's `git.ts::runCommand`, which spreads `process.env` into every
+// spawn. `/dev/null` is the documented way to tell git "use no config from
+// this scope". `GIT_TERMINAL_PROMPT=0` + `GIT_ASKPASS=true` guarantee git
+// never blocks on stdin waiting for credentials or a GPG passphrase.
+process.env.GIT_CONFIG_GLOBAL = "/dev/null";
+process.env.GIT_CONFIG_SYSTEM = "/dev/null";
+process.env.GIT_CONFIG_NOSYSTEM = "1";
+process.env.GIT_TERMINAL_PROMPT = "0";
+process.env.GIT_ASKPASS = "true";
+// `XDG_CONFIG_HOME`, if set, lets git re-discover a global config under
+// `$XDG_CONFIG_HOME/git/config` even after we pin `GIT_CONFIG_GLOBAL`. Clear
+// it so the override is absolute.
+delete process.env.XDG_CONFIG_HOME;
+
 function createSession(
 	cwd: string = "/tmp/test",
 	settings: Settings = Settings.isolated({ "github.enabled": true }),
@@ -145,11 +167,9 @@ async function setupTempHome(): Promise<{ home: string; cleanup: () => Promise<v
  * the value rendered into the tool result.
  */
 async function expectedWorktreePath(home: string, primaryRoot: string, localBranch: string): Promise<string> {
-	const encoded = path
-		.resolve(primaryRoot)
-		.replace(/^[/\\]/, "")
-		.replace(/[/\\:]/g, "-");
-	return fs.realpath(path.join(home, ".omp", "wt", encoded, localBranch));
+	const prNumber = localBranch.replace(/^pr-/, "");
+	const segment = `${prNumber}-${hashPath(primaryRoot)}`;
+	return fs.realpath(path.join(home, ".omp", "wt", segment));
 }
 
 describe("github tool", () => {
