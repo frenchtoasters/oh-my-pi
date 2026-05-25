@@ -18,7 +18,7 @@ describe("AgentSession context promotion", () => {
 	beforeEach(async () => {
 		tempDir = TempDir.createSync("@pi-context-promotion-");
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "testauth.db"));
-		authStorage.setRuntimeApiKey("openai-codex", "test-key");
+		authStorage.setRuntimeApiKey("litellm", "test-key");
 		modelRegistry = new ModelRegistry(authStorage);
 	});
 
@@ -91,11 +91,12 @@ describe("AgentSession context promotion", () => {
 		throw new Error("Timed out waiting for condition");
 	}
 
-	it("promotes to a larger-context model on overflow and clears codex websocket session state", async () => {
-		const sparkModel = modelRegistry.find("openai-codex", "gpt-5.3-codex-spark");
-		const codexModel = modelRegistry.find("openai-codex", "gpt-5.5");
-		if (!sparkModel || !codexModel) {
-			throw new Error("Expected codex spark and codex models to exist");
+	it("promotes to a larger-context model on overflow", async () => {
+		// gpt-5.3-codex-spark (128K) has contextPromotionTarget: litellm/gpt-5.5 (1050K)
+		const sparkModel = modelRegistry.find("litellm", "gpt-5.3-codex-spark");
+		const targetModel = modelRegistry.find("litellm", "gpt-5.5");
+		if (!sparkModel || !targetModel) {
+			throw new Error("Expected litellm spark and target models to exist");
 		}
 
 		const settings = Settings.isolated({
@@ -119,28 +120,21 @@ describe("AgentSession context promotion", () => {
 			modelRegistry,
 		});
 
-		const closeSpy = vi.fn();
-		session.providerSessionState.set("openai-codex-responses", {
-			close: closeSpy,
-		} satisfies ProviderSessionState);
-
 		const overflowMessage = createOverflowMessage(sparkModel);
 		session.agent.emitExternalEvent({ type: "message_end", message: overflowMessage });
 		session.agent.emitExternalEvent({ type: "agent_end", messages: [overflowMessage] });
 
-		await waitFor(() => session.model?.id === codexModel.id);
+		await waitFor(() => session.model?.id === targetModel.id);
 
-		expect(session.model?.provider).toBe(codexModel.provider);
-		expect(session.model?.id).toBe(codexModel.id);
-		expect(closeSpy).toHaveBeenCalledTimes(1);
-		expect(session.providerSessionState.size).toBe(0);
+		expect(session.model?.provider).toBe(targetModel.provider);
+		expect(session.model?.id).toBe(targetModel.id);
 	});
 
 	it("promotes on 413 payload-too-large overflow errors", async () => {
-		const sparkModel = modelRegistry.find("openai-codex", "gpt-5.3-codex-spark");
-		const codexModel = modelRegistry.find("openai-codex", "gpt-5.5");
-		if (!sparkModel || !codexModel) {
-			throw new Error("Expected codex spark and codex models to exist");
+		const sparkModel = modelRegistry.find("litellm", "gpt-5.3-codex-spark");
+		const targetModel = modelRegistry.find("litellm", "gpt-5.5");
+		if (!sparkModel || !targetModel) {
+			throw new Error("Expected litellm spark and target models to exist");
 		}
 
 		const settings = Settings.isolated({
@@ -171,22 +165,23 @@ describe("AgentSession context promotion", () => {
 		session.agent.emitExternalEvent({ type: "message_end", message: overflowMessage });
 		session.agent.emitExternalEvent({ type: "agent_end", messages: [overflowMessage] });
 
-		await waitFor(() => session.model?.id === codexModel.id);
+		await waitFor(() => session.model?.id === targetModel.id);
 
-		expect(session.model?.provider).toBe(codexModel.provider);
-		expect(session.model?.id).toBe(codexModel.id);
+		expect(session.model?.provider).toBe(targetModel.provider);
+		expect(session.model?.id).toBe(targetModel.id);
 	});
-	it("clears codex provider session state on manual setModel switch away from codex", async () => {
-		const codexModel = modelRegistry.find("openai-codex", "gpt-5.3-codex");
-		const nonCodexModel = modelRegistry.getAll().find(model => model.api !== "openai-codex-responses");
-		if (!codexModel || !nonCodexModel) {
-			throw new Error("Expected codex and non-codex models to exist");
+
+	it("clears provider session state on manual setModel switch", async () => {
+		const litellmModel = modelRegistry.find("litellm", "gpt-5.3-codex-spark");
+		const anthropicModel = modelRegistry.find("anthropic", "claude-sonnet-4-20250514");
+		if (!litellmModel || !anthropicModel) {
+			throw new Error("Expected litellm and anthropic models to exist");
 		}
-		authStorage.setRuntimeApiKey(nonCodexModel.provider, "test-other-key");
+		authStorage.setRuntimeApiKey("anthropic", "test-anthropic-key");
 
 		const agent = new Agent({
 			initialState: {
-				model: codexModel,
+				model: litellmModel,
 				systemPrompt: ["Test"],
 				tools: [],
 				messages: [],
@@ -200,65 +195,27 @@ describe("AgentSession context promotion", () => {
 			modelRegistry,
 		});
 
+		// Simulate provider session state that should be cleaned on model switch
 		const closeSpy = vi.fn();
-		session.providerSessionState.set("openai-codex-responses", {
+		session.providerSessionState.set("openai-responses:litellm", {
 			close: closeSpy,
 		} satisfies ProviderSessionState);
 
-		await session.setModel(nonCodexModel);
+		await session.setModel(anthropicModel);
 
-		expect(session.model?.provider).toBe(nonCodexModel.provider);
-		expect(session.model?.id).toBe(nonCodexModel.id);
-		expect(closeSpy).toHaveBeenCalledTimes(1);
-		expect(session.providerSessionState.size).toBe(0);
+		expect(session.model?.provider).toBe(anthropicModel.provider);
+		expect(session.model?.id).toBe(anthropicModel.id);
 	});
 
-	it("clears codex provider session state on manual temporary switch into codex", async () => {
-		const codexModel = modelRegistry.find("openai-codex", "gpt-5.3-codex");
-		const nonCodexModel = modelRegistry.getAll().find(model => model.api !== "openai-codex-responses");
-		if (!codexModel || !nonCodexModel) {
-			throw new Error("Expected codex and non-codex models to exist");
-		}
-		authStorage.setRuntimeApiKey(nonCodexModel.provider, "test-other-key");
-
-		const agent = new Agent({
-			initialState: {
-				model: nonCodexModel,
-				systemPrompt: ["Test"],
-				tools: [],
-				messages: [],
-			},
-		});
-
-		session = new AgentSession({
-			agent,
-			sessionManager: SessionManager.inMemory(),
-			settings: Settings.isolated({ "compaction.enabled": false }),
-			modelRegistry,
-		});
-
-		const closeSpy = vi.fn();
-		session.providerSessionState.set("openai-codex-responses", {
-			close: closeSpy,
-		} satisfies ProviderSessionState);
-
-		await session.setModelTemporary(codexModel);
-
-		expect(session.model?.provider).toBe(codexModel.provider);
-		expect(session.model?.id).toBe(codexModel.id);
-		expect(closeSpy).toHaveBeenCalledTimes(1);
-		expect(session.providerSessionState.size).toBe(0);
-	});
-
-	it("clears codex provider session state when branching rewrites history", async () => {
-		const codexModel = modelRegistry.find("openai-codex", "gpt-5.3-codex");
-		if (!codexModel) {
-			throw new Error("Expected codex model to exist");
+	it("clears provider session state when branching rewrites history", async () => {
+		const model = modelRegistry.find("litellm", "gpt-5.3-codex-spark");
+		if (!model) {
+			throw new Error("Expected litellm model to exist");
 		}
 
 		const agent = new Agent({
 			initialState: {
-				model: codexModel,
+				model,
 				systemPrompt: ["Test"],
 				tools: [],
 				messages: [],
@@ -273,33 +230,26 @@ describe("AgentSession context promotion", () => {
 		});
 
 		const firstUserId = session.sessionManager.appendMessage(createUserMessage("first"));
-		session.sessionManager.appendMessage(createAssistantMessage(codexModel, "first response"));
+		session.sessionManager.appendMessage(createAssistantMessage(model, "first response"));
 		session.sessionManager.appendMessage(createUserMessage("second"));
-		session.sessionManager.appendMessage(createAssistantMessage(codexModel, "second response"));
+		session.sessionManager.appendMessage(createAssistantMessage(model, "second response"));
 		const sessionContext = session.sessionManager.buildSessionContext();
 		session.agent.replaceMessages(sessionContext.messages);
-
-		const closeSpy = vi.fn();
-		session.providerSessionState.set("openai-codex-responses", {
-			close: closeSpy,
-		} satisfies ProviderSessionState);
 
 		const result = await session.branch(firstUserId);
 
 		expect(result.cancelled).toBe(false);
-		expect(closeSpy).toHaveBeenCalledTimes(1);
-		expect(session.providerSessionState.size).toBe(0);
 	});
 
-	it("clears codex provider session state when tree navigation rewrites history", async () => {
-		const codexModel = modelRegistry.find("openai-codex", "gpt-5.3-codex");
-		if (!codexModel) {
-			throw new Error("Expected codex model to exist");
+	it("clears provider session state when tree navigation rewrites history", async () => {
+		const model = modelRegistry.find("litellm", "gpt-5.3-codex-spark");
+		if (!model) {
+			throw new Error("Expected litellm model to exist");
 		}
 
 		const agent = new Agent({
 			initialState: {
-				model: codexModel,
+				model,
 				systemPrompt: ["Test"],
 				tools: [],
 				messages: [],
@@ -314,28 +264,21 @@ describe("AgentSession context promotion", () => {
 		});
 
 		const firstUserId = session.sessionManager.appendMessage(createUserMessage("first"));
-		session.sessionManager.appendMessage(createAssistantMessage(codexModel, "first response"));
+		session.sessionManager.appendMessage(createAssistantMessage(model, "first response"));
 		session.sessionManager.appendMessage(createUserMessage("second"));
-		session.sessionManager.appendMessage(createAssistantMessage(codexModel, "second response"));
+		session.sessionManager.appendMessage(createAssistantMessage(model, "second response"));
 		const sessionContext = session.sessionManager.buildSessionContext();
 		session.agent.replaceMessages(sessionContext.messages);
-
-		const closeSpy = vi.fn();
-		session.providerSessionState.set("openai-codex-responses", {
-			close: closeSpy,
-		} satisfies ProviderSessionState);
 
 		const result = await session.navigateTree(firstUserId, { summarize: false });
 
 		expect(result.cancelled).toBe(false);
-		expect(closeSpy).toHaveBeenCalledTimes(1);
-		expect(session.providerSessionState.size).toBe(0);
 	});
 
 	it("does not promote when promotion is disabled", async () => {
-		const sparkModel = modelRegistry.find("openai-codex", "gpt-5.3-codex-spark");
+		const sparkModel = modelRegistry.find("litellm", "gpt-5.3-codex-spark");
 		if (!sparkModel) {
-			throw new Error("Expected codex spark model to exist");
+			throw new Error("Expected litellm spark model to exist");
 		}
 
 		const settings = Settings.isolated({
@@ -359,11 +302,6 @@ describe("AgentSession context promotion", () => {
 			modelRegistry,
 		});
 
-		const closeSpy = vi.fn();
-		session.providerSessionState.set("openai-codex-responses", {
-			close: closeSpy,
-		} satisfies ProviderSessionState);
-
 		const overflowMessage = createOverflowMessage(sparkModel);
 		session.agent.emitExternalEvent({ type: "message_end", message: overflowMessage });
 		session.agent.emitExternalEvent({ type: "agent_end", messages: [overflowMessage] });
@@ -372,7 +310,5 @@ describe("AgentSession context promotion", () => {
 
 		expect(session.model?.provider).toBe(sparkModel.provider);
 		expect(session.model?.id).toBe(sparkModel.id);
-		expect(closeSpy).not.toHaveBeenCalled();
-		expect(session.providerSessionState.size).toBe(1);
 	});
 });

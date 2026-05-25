@@ -470,7 +470,9 @@ export function renderCall(args: TaskParams, _options: RenderResultOptions, them
 			lines.push(` ${vertical}  ${content}`);
 		}
 		const taskPrefix = showIsolated ? branch : last;
-		lines.push(` ${taskPrefix} ${theme.fg("dim", "Tasks")}: ${theme.fg("muted", `${args.tasks?.length ?? "?"} agents`)}`);
+		lines.push(
+			` ${taskPrefix} ${theme.fg("dim", "Tasks")}: ${theme.fg("muted", `${args.tasks?.length ?? "?"} agents`)}`,
+		);
 		if (showIsolated) {
 			lines.push(` ${last} ${theme.fg("dim", "Isolated")}: ${theme.fg("muted", "true")}`);
 		}

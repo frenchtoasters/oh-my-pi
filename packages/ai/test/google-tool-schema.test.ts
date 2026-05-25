@@ -4,11 +4,11 @@ import type { Model, Tool } from "@oh-my-pi/pi-ai/types";
 import { sanitizeSchemaForCCA, sanitizeSchemaForGoogle } from "@oh-my-pi/pi-ai/utils/schema";
 import type { TSchema } from "@sinclair/typebox";
 
-function createModel(id: string): Model<"google-gemini-cli"> {
+function createModel(id: string): Model<"google-generative-ai"> {
 	return {
 		id,
 		name: id,
-		api: "google-gemini-cli",
+		api: "google-generative-ai",
 		provider: "google-antigravity",
 		baseUrl: "https://example.com",
 		reasoning: false,

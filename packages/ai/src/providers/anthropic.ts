@@ -44,18 +44,12 @@ import {
 import { createAbortSourceTracker } from "../utils/abort";
 import { AssistantMessageEventStream } from "../utils/event-stream";
 import { isFoundryEnabled } from "../utils/foundry";
-import { finalizeErrorMessage, type RawHttpRequestDump, rewriteCopilotError } from "../utils/http-inspector";
+import { finalizeErrorMessage, type RawHttpRequestDump } from "../utils/http-inspector";
 import { createWatchdog, getStreamFirstEventTimeoutMs } from "../utils/idle-iterator";
 import { parseJsonWithRepair, parseStreamingJson } from "../utils/json-parse";
-import { parseGitHubCopilotApiKey } from "../utils/oauth/github-copilot";
 import { notifyProviderResponse } from "../utils/provider-response";
-import { extractHttpStatusFromError, isCopilotRetryableError, isUnexpectedSocketCloseMessage } from "../utils/retry";
+import { extractHttpStatusFromError, isUnexpectedSocketCloseMessage } from "../utils/retry";
 import { COMBINATOR_KEYS, NO_STRICT } from "../utils/schema";
-import {
-	buildCopilotDynamicHeaders,
-	hasCopilotVisionInput,
-	resolveGitHubCopilotBaseUrl,
-} from "./github-copilot-headers";
 import { transformMessages } from "./transform-messages";
 
 export type AnthropicHeaderOptions = {
@@ -532,10 +526,7 @@ type FoundryTlsOptions = {
 	key?: string;
 };
 
-function resolveAnthropicBaseUrl(model: Model<"anthropic-messages">, apiKey?: string): string | undefined {
-	if (model.provider === "github-copilot") {
-		return normalizeAnthropicBaseUrl(resolveGitHubCopilotBaseUrl(model.baseUrl, apiKey) ?? model.baseUrl);
-	}
+function resolveAnthropicBaseUrl(model: Model<"anthropic-messages">): string | undefined {
 	if (model.provider === "anthropic" && isFoundryEnabled()) {
 		const foundryBaseUrl = normalizeAnthropicBaseUrl($env.FOUNDRY_BASE_URL);
 		if (foundryBaseUrl) {
@@ -810,9 +801,8 @@ function isProviderRetryableStreamEnvelopeError(error: unknown): boolean {
 	return /stream event order|before message_start/i.test(error.message);
 }
 
-export function isProviderRetryableError(error: unknown, provider?: string): boolean {
+export function isProviderRetryableError(error: unknown): boolean {
 	if (!(error instanceof Error)) return false;
-	if (provider === "github-copilot" && isCopilotRetryableError(error)) return true;
 	const msg = error.message.toLowerCase();
 	return (
 		isUnexpectedSocketCloseMessage(msg) ||
@@ -883,23 +873,13 @@ export const streamAnthropic: StreamFunction<"anthropic-messages"> = (
 		const startTime = Date.now();
 		let firstTokenTime: number | undefined;
 
-		const copilotDynamicHeaders =
-			model.provider === "github-copilot"
-				? buildCopilotDynamicHeaders({
-						messages: context.messages,
-						hasImages: hasCopilotVisionInput(context.messages),
-						premiumMultiplier: model.premiumMultiplier,
-						headers: { ...(model.headers ?? {}), ...(options?.headers ?? {}) },
-						initiatorOverride: options?.initiatorOverride,
-					})
-				: undefined;
 		const output: AssistantMessage = {
 			role: "assistant",
 			content: [],
 			api: model.api as Api,
 			provider: model.provider,
 			model: model.id,
-			usage: createEmptyUsage(copilotDynamicHeaders?.premiumRequests),
+			usage: createEmptyUsage(),
 			stopReason: "stop",
 			timestamp: Date.now(),
 		};
@@ -923,16 +903,14 @@ export const streamAnthropic: StreamFunction<"anthropic-messages"> = (
 					stream: true,
 					interleavedThinking: options?.interleavedThinking ?? true,
 					headers: options?.headers,
-					dynamicHeaders: copilotDynamicHeaders?.headers,
+					dynamicHeaders: undefined,
 					isOAuth: options?.isOAuth,
 					hasTools: !!context.tools?.length,
 				});
 				client = created.client;
 				isOAuthToken = created.isOAuthToken;
 			}
-			const baseUrl =
-				resolveAnthropicBaseUrl(model, options?.apiKey ?? getEnvApiKey(model.provider) ?? "") ??
-				"https://api.anthropic.com";
+			const baseUrl = resolveAnthropicBaseUrl(model) ?? "https://api.anthropic.com";
 			const providerSessionState = getAnthropicProviderSessionState(options?.providerSessionState);
 			let disableStrictTools =
 				(providerSessionState?.strictToolsDisabled ?? false) || (model.compat?.disableStrictTools ?? false);
@@ -1216,8 +1194,7 @@ export const streamAnthropic: StreamFunction<"anthropic-messages"> = (
 						providerRetryAttempt = 0;
 						output.content.length = 0;
 						output.responseId = undefined;
-						output.providerPayload = undefined;
-						output.usage = createEmptyUsage(copilotDynamicHeaders?.premiumRequests);
+						output.usage = createEmptyUsage();
 						output.stopReason = "stop";
 						firstTokenTime = undefined;
 						continue;
@@ -1225,8 +1202,7 @@ export const streamAnthropic: StreamFunction<"anthropic-messages"> = (
 					const isTransientEnvelopeFailure =
 						isTransientStreamParseError(streamFailure) || isTransientStreamEnvelopeError(streamFailure);
 					const canRetryTransientEnvelopeFailure = isTransientEnvelopeFailure && !streamedReplayUnsafeContent;
-					const canRetryProviderFailure =
-						firstTokenTime === undefined && isProviderRetryableError(streamFailure, model.provider);
+					const canRetryProviderFailure = firstTokenTime === undefined && isProviderRetryableError(streamFailure);
 					if (
 						activeAbortTracker.wasCallerAbort() ||
 						providerRetryAttempt >= PROVIDER_MAX_RETRIES ||
@@ -1240,8 +1216,7 @@ export const streamAnthropic: StreamFunction<"anthropic-messages"> = (
 					output.content.length = 0;
 					output.responseId = undefined;
 					output.errorMessage = strictFallbackErrorMessage;
-					output.providerPayload = undefined;
-					output.usage = createEmptyUsage(copilotDynamicHeaders?.premiumRequests);
+					output.usage = createEmptyUsage();
 					output.stopReason = "stop";
 					firstTokenTime = undefined;
 				}
@@ -1259,7 +1234,6 @@ export const streamAnthropic: StreamFunction<"anthropic-messages"> = (
 			const firstEventTimeoutError = activeAbortTracker.getLocalAbortReason();
 			output.stopReason = activeAbortTracker.wasCallerAbort() ? "aborted" : "error";
 			output.errorMessage = firstEventTimeoutError?.message ?? (await finalizeErrorMessage(error, rawRequestDump));
-			output.errorMessage = rewriteCopilotError(output.errorMessage, error, model.provider);
 			output.duration = Date.now() - startTime;
 			if (firstTokenTime) output.ttft = firstTokenTime - startTime;
 			stream.push({ type: "error", reason: output.stopReason, error: output });
@@ -1365,39 +1339,9 @@ export function buildAnthropicClientOptions(args: AnthropicClientOptionsArgs): A
 	const needsInterleavedBeta = interleavedThinking && !supportsAdaptiveThinkingDisplay(model.id);
 	const needsFineGrainedToolStreamingBeta = hasTools && !compat.supportsEagerToolInputStreaming;
 	const oauthToken = isOAuth ?? isAnthropicOAuthToken(apiKey);
-	const baseUrl = resolveAnthropicBaseUrl(model, apiKey);
+	const baseUrl = resolveAnthropicBaseUrl(model);
 	const foundryCustomHeaders = resolveAnthropicCustomHeaders(model);
 	const tlsFetchOptions = buildClaudeCodeTlsFetchOptions(model, baseUrl);
-	if (model.provider === "github-copilot") {
-		const copilotApiKey = parseGitHubCopilotApiKey(apiKey).accessToken;
-		const betaFeatures = [...extraBetas];
-		if (needsFineGrainedToolStreamingBeta) {
-			betaFeatures.push(fineGrainedToolStreamingBeta);
-		}
-		const defaultHeaders = mergeHeaders(
-			{
-				Accept: stream ? "text/event-stream" : "application/json",
-				"Anthropic-Dangerous-Direct-Browser-Access": "true",
-				Authorization: `Bearer ${copilotApiKey}`,
-				...(betaFeatures.length > 0 ? { "anthropic-beta": buildBetaHeader([], betaFeatures) } : {}),
-			},
-			model.headers,
-			dynamicHeaders,
-			headers,
-		);
-
-		return {
-			isOAuthToken: false,
-			apiKey: null,
-			authToken: copilotApiKey,
-			baseURL: baseUrl,
-			maxRetries: 5,
-			dangerouslyAllowBrowser: true,
-			defaultHeaders,
-			logLevel: ANTHROPIC_SDK_LOG_LEVEL,
-			...(tlsFetchOptions ? { fetchOptions: tlsFetchOptions } : {}),
-		};
-	}
 
 	const betaFeatures = [...extraBetas];
 	if (needsFineGrainedToolStreamingBeta) {
@@ -1738,7 +1682,7 @@ function buildParams(
 		params.tools = convertTools(
 			context.tools,
 			isOAuthToken,
-			disableStrictTools || model.provider === "github-copilot",
+			disableStrictTools,
 			getAnthropicCompat(model).supportsEagerToolInputStreaming,
 		);
 	}

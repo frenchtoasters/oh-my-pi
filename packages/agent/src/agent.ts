@@ -4,8 +4,6 @@
 import {
 	type AssistantMessage,
 	type AssistantMessageEvent,
-	type CursorExecHandlers,
-	type CursorToolResultHandler,
 	type Effort,
 	getBundledModel,
 	type ImageContent,
@@ -183,16 +181,6 @@ export interface AgentOptions {
 	intentTracing?: boolean;
 	/** Dynamic tool choice override, resolved per LLM call. */
 	getToolChoice?: () => ToolChoice | undefined;
-
-	/**
-	 * Cursor exec handlers for local tool execution.
-	 */
-	cursorExecHandlers?: CursorExecHandlers;
-
-	/**
-	 * Cursor tool result callback for exec tool responses.
-	 */
-	cursorOnToolResult?: CursorToolResultHandler;
 }
 
 export interface AgentPromptOptions {
@@ -239,8 +227,6 @@ export class Agent {
 	#serviceTier?: ServiceTier;
 	#maxRetryDelayMs?: number;
 	#getToolContext?: (toolCall?: ToolCallContext) => AgentToolContext | undefined;
-	#cursorExecHandlers?: CursorExecHandlers;
-	#cursorOnToolResult?: CursorToolResultHandler;
 	#runningPrompt?: Promise<void>;
 	#resolveRunningPrompt?: () => void;
 	#kimiApiFormat?: "openai" | "anthropic";
@@ -282,8 +268,6 @@ export class Agent {
 		this.#onPayload = opts.onPayload;
 		this.#onResponse = opts.onResponse;
 		this.#getToolContext = opts.getToolContext;
-		this.#cursorExecHandlers = opts.cursorExecHandlers;
-		this.#cursorOnToolResult = opts.cursorOnToolResult;
 		this.#kimiApiFormat = opts.kimiApiFormat;
 		this.#preferWebsockets = opts.preferWebsockets;
 		this.#transformToolCallArguments = opts.transformToolCallArguments;
@@ -740,28 +724,6 @@ export class Agent {
 			tools: this.#state.tools,
 		};
 
-		const cursorOnToolResult =
-			this.#cursorExecHandlers || this.#cursorOnToolResult
-				? async (message: ToolResultMessage) => {
-						let finalMessage = message;
-						if (this.#cursorOnToolResult) {
-							try {
-								const updated = await this.#cursorOnToolResult(message);
-								if (updated) {
-									finalMessage = updated;
-								}
-							} catch {}
-						}
-						// Buffer tool result with current text length for correct ordering later.
-						// Cursor executes tools server-side during streaming, so the assistant message
-						// already incorporates results. We buffer here and emit in correct order
-						// when the assistant message ends.
-						const textLength = this.#getAssistantTextLength(this.#state.streamMessage);
-						this.#cursorToolResultBuffer.push({ toolResult: finalMessage, textLengthAtCall: textLength });
-						return finalMessage;
-					}
-				: undefined;
-
 		const getToolChoice = () =>
 			this.#getToolChoice?.() ?? refreshToolChoiceForActiveTools(options?.toolChoice, this.#state.tools);
 
@@ -796,8 +758,6 @@ export class Agent {
 				context.systemPromptBlocks = this.#systemPromptBlocks;
 				context.tools = this.#state.tools;
 			},
-			cursorExecHandlers: this.#cursorExecHandlers,
-			cursorOnToolResult,
 			transformToolCallArguments: this.#transformToolCallArguments,
 			intentTracing: this.#intentTracing,
 			onAssistantMessageEvent: this.#onAssistantMessageEvent,
@@ -929,20 +889,6 @@ export class Agent {
 		for (const listener of this.#listeners) {
 			listener(e);
 		}
-	}
-
-	/** Calculate total text length from an assistant message's content blocks */
-	#getAssistantTextLength(message: AgentMessage | null): number {
-		if (!message || message.role !== "assistant" || !Array.isArray(message.content)) {
-			return 0;
-		}
-		let length = 0;
-		for (const block of message.content) {
-			if (block.type === "text") {
-				length += (block as TextContent).text.length;
-			}
-		}
-		return length;
 	}
 
 	/**

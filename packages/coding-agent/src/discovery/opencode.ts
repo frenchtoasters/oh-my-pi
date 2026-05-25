@@ -180,8 +180,7 @@ function extractMCPServers(
 		const env =
 			(serverConfig.environment && typeof serverConfig.environment === "object"
 				? serverConfig.environment
-				: undefined) ??
-			(serverConfig.env && typeof serverConfig.env === "object" ? serverConfig.env : undefined);
+				: undefined) ?? (serverConfig.env && typeof serverConfig.env === "object" ? serverConfig.env : undefined);
 
 		items.push({
 			name,

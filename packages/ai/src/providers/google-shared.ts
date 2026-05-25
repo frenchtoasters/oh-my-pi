@@ -8,7 +8,7 @@ import { transformMessages } from "./transform-messages";
 
 export { sanitizeSchemaForGoogle };
 
-type GoogleApiType = "google-generative-ai" | "google-gemini-cli" | "google-vertex";
+type GoogleApiType = "google-generative-ai";
 
 /**
  * Determines whether a streamed Gemini `Part` should be treated as "thinking".
@@ -268,7 +268,7 @@ export function convertMessages<T extends GoogleApiType>(model: Model<T>, contex
  */
 export function convertTools(
 	tools: Tool[],
-	model: Model<"google-generative-ai" | "google-gemini-cli" | "google-vertex">,
+	model: Model<GoogleApiType>,
 ): { functionDeclarations: Record<string, unknown>[] }[] | undefined {
 	if (tools.length === 0) return undefined;
 

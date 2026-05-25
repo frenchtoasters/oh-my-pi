@@ -10,7 +10,6 @@ import type {
 	ImageContent,
 	Message,
 	MessageAttribution,
-	ProviderPayload,
 	TextContent,
 	ToolResultMessage,
 } from "@oh-my-pi/pi-ai";
@@ -114,7 +113,6 @@ export interface CompactionSummaryMessage {
 	summary: string;
 	shortSummary?: string;
 	tokensBefore: number;
-	providerPayload?: ProviderPayload;
 	timestamp: number;
 }
 
@@ -202,43 +200,16 @@ export function createCompactionSummaryMessage(
 	tokensBefore: number,
 	timestamp: string,
 	shortSummary?: string,
-	providerPayload?: ProviderPayload,
 ): CompactionSummaryMessage {
 	return {
 		role: "compactionSummary",
 		summary,
 		shortSummary,
 		tokensBefore,
-		providerPayload,
 		timestamp: new Date(timestamp).getTime(),
 	};
 }
 
-export function sanitizeRehydratedOpenAIResponsesAssistantMessage(message: AssistantMessage): AssistantMessage {
-	if (message.providerPayload?.type !== "openaiResponsesHistory") {
-		return message;
-	}
-
-	let didSanitizeContent = false;
-	const sanitizedContent = message.content.map(block => {
-		if (block.type !== "thinking" || block.thinkingSignature === undefined) {
-			return block;
-		}
-
-		didSanitizeContent = true;
-		return { ...block, thinkingSignature: undefined };
-	});
-
-	// Strip the assistant-side native replay payload entirely.
-	// After rehydration it belongs to a previous live provider connection and
-	// replaying it on a warmed session causes 401 rejections from GitHub Copilot.
-	// User/developer payloads are preserved separately by the caller.
-	return {
-		...message,
-		...(didSanitizeContent ? { content: sanitizedContent } : {}),
-		providerPayload: undefined,
-	};
-}
 
 /** Convert CustomMessageEntry to AgentMessage format */
 export function createCustomMessage(
@@ -326,7 +297,6 @@ export function convertToLlm(messages: AgentMessage[]): Message[] {
 							},
 						],
 						attribution: "agent",
-						providerPayload: m.providerPayload,
 						timestamp: m.timestamp,
 					};
 				case "fileMention": {

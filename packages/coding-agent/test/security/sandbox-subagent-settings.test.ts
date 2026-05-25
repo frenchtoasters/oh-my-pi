@@ -8,12 +8,7 @@ import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import { SETTINGS_SCHEMA, type SettingPath } from "@oh-my-pi/pi-coding-agent/config/settings-schema";
 import type { ToolSession } from "@oh-my-pi/pi-coding-agent/tools";
 import { ToolError } from "@oh-my-pi/pi-coding-agent/tools/tool-errors";
-import {
-	BUILTIN_PROFILES,
-	type SandboxMode,
-	buildSandboxCaps,
-	enforceSandboxAccess,
-} from "../../src/security/sandbox";
+import { BUILTIN_PROFILES, type SandboxMode, buildSandboxCaps, enforceSandboxAccess } from "../../src/security/sandbox";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Fixtures

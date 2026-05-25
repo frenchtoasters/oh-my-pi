@@ -7,25 +7,15 @@ import type { Api, Model, ToolChoice } from "@oh-my-pi/pi-ai";
 export function buildNamedToolChoice(toolName: string, model?: Model<Api>): ToolChoice | undefined {
 	if (!model) return undefined;
 
-	if (model.api === "anthropic-messages" || model.api === "bedrock-converse-stream") {
+	if (model.api === "anthropic-messages") {
 		return { type: "tool", name: toolName };
 	}
 
-	if (
-		model.api === "openai-codex-responses" ||
-		model.api === "openai-responses" ||
-		model.api === "openai-completions" ||
-		model.api === "azure-openai-responses"
-	) {
+	if (model.api === "openai-completions") {
 		return { type: "function", name: toolName };
 	}
 
-	if (
-		model.api === "google-generative-ai" ||
-		model.api === "google-gemini-cli" ||
-		model.api === "google-vertex" ||
-		model.api === "ollama-chat"
-	) {
+	if (model.api === "google-generative-ai") {
 		return "required";
 	}
 

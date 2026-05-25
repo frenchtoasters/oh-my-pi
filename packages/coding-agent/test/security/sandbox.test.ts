@@ -104,9 +104,7 @@ describe("SandboxCaps (native class)", () => {
 	});
 
 	it("summary returns a non-empty string describing capabilities", () => {
-		const caps = new SandboxCaps()
-			.allowPath(testDir, SandboxAccessMode.ReadWrite)
-			.blockNetwork();
+		const caps = new SandboxCaps().allowPath(testDir, SandboxAccessMode.ReadWrite).blockNetwork();
 		const summary = caps.summary();
 		expect(typeof summary).toBe("string");
 		expect(summary.length).toBeGreaterThan(0);
@@ -193,7 +191,14 @@ describe("resolveProfile()", () => {
 	});
 
 	it("all built-in read-only agents have network blocked", () => {
-		for (const name of ["explore", "reviewer", "ultra-review-gemini", "ultra-review-opus", "ultra-review-sonnet", "plan"]) {
+		for (const name of [
+			"explore",
+			"reviewer",
+			"ultra-review-gemini",
+			"ultra-review-opus",
+			"ultra-review-sonnet",
+			"plan",
+		]) {
 			const profile = resolveProfile(name, {});
 			expect(profile.network).toBe("blocked");
 			expect(profile.fs.every(f => f.mode === "read")).toBe(true);
@@ -370,9 +375,7 @@ describe("enforceSandboxAccess()", () => {
 
 			// Path outside testDir (use canonical form)
 			expect(() => enforceSandboxAccess(session, "/root/.ssh/id_rsa", "read")).not.toThrow();
-			expect(warnSpy).toHaveBeenCalledWith(
-				expect.stringContaining("Sandbox: read access denied"),
-			);
+			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Sandbox: read access denied"));
 		});
 
 		it("does not warn for allowed paths", () => {
@@ -520,7 +523,9 @@ describe("integration: buildSandboxCaps -> enforceSandboxAccess", () => {
 		if (fsSync.existsSync(bunDir)) {
 			expect(() => enforceSandboxAccess(session, path.join(bunDir, "install/cache/pkg"), "read")).not.toThrow();
 			// .bun should NOT be writable
-			expect(() => enforceSandboxAccess(session, path.join(bunDir, "install/cache/pkg"), "write")).toThrow(ToolError);
+			expect(() => enforceSandboxAccess(session, path.join(bunDir, "install/cache/pkg"), "write")).toThrow(
+				ToolError,
+			);
 		}
 
 		// Sensitive paths should be blocked

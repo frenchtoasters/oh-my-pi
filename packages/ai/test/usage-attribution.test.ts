@@ -39,7 +39,6 @@ describe("openai-completions parseChunkUsage", () => {
 				completion_tokens_details: { reasoning_tokens: 40 },
 			},
 			OPENAI_MODEL,
-			undefined,
 		);
 
 		expect(usage.output).toBe(100);
@@ -50,7 +49,7 @@ describe("openai-completions parseChunkUsage", () => {
 	});
 
 	it("omits reasoningTokens when no reasoning_tokens are reported", () => {
-		const usage = parseChunkUsage({ prompt_tokens: 50, completion_tokens: 25 }, OPENAI_MODEL, undefined);
+		const usage = parseChunkUsage({ prompt_tokens: 50, completion_tokens: 25 }, OPENAI_MODEL);
 
 		expect(usage.reasoningTokens).toBeUndefined();
 		expect(usage.output).toBe(25);
@@ -68,7 +67,6 @@ describe("openai-completions parseChunkUsage", () => {
 				prompt_tokens_details: { cached_tokens: 0, cache_write_tokens: 5_500 },
 			},
 			OPENAI_MODEL,
-			undefined,
 		);
 
 		expect(usage.input).toBe(500);
@@ -85,7 +83,6 @@ describe("openai-completions parseChunkUsage", () => {
 				prompt_tokens_details: { cached_tokens: 5_800, cache_write_tokens: 0 },
 			},
 			OPENAI_MODEL,
-			undefined,
 		);
 
 		expect(usage.input).toBe(200);

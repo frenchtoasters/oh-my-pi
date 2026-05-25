@@ -3,24 +3,13 @@ import type { Model, OpenAICompat } from "../types";
 type OpenAIReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh";
 type ResolvedToolStrictMode = NonNullable<OpenAICompat["toolStrictMode"]> | "mixed";
 
-export type ResolvedOpenAICompat = Required<
-	Omit<OpenAICompat, "openRouterRouting" | "vercelGatewayRouting" | "extraBody" | "toolStrictMode">
-> & {
-	openRouterRouting?: OpenAICompat["openRouterRouting"];
-	vercelGatewayRouting?: OpenAICompat["vercelGatewayRouting"];
+export type ResolvedOpenAICompat = Required<Omit<OpenAICompat, "extraBody" | "toolStrictMode">> & {
 	extraBody?: OpenAICompat["extraBody"];
 	toolStrictMode: ResolvedToolStrictMode;
 };
 
 function detectStrictModeSupport(provider: string, baseUrl: string): boolean {
-	if (
-		provider === "openai" ||
-		provider === "openrouter" ||
-		provider === "cerebras" ||
-		provider === "together" ||
-		provider === "github-copilot" ||
-		provider === "zenmux"
-	) {
+	if (provider === "openai" || provider === "openrouter" || provider === "cerebras" || provider === "together") {
 		return true;
 	}
 
@@ -86,18 +75,15 @@ export function detectOpenAICompat(model: Model<"openai-completions">, resolvedB
 		isAlibaba ||
 		isZai ||
 		isKilo ||
-		isQwen ||
-		provider === "opencode-zen" ||
-		provider === "opencode-go" ||
-		baseUrl.includes("opencode.ai");
+		isQwen;
 
 	const useMaxTokens =
 		provider === "mistral" ||
 		baseUrl.includes("mistral.ai") ||
 		baseUrl.includes("chutes.ai") ||
 		baseUrl.includes("fireworks.ai");
-	const isGrok = provider === "xai" || baseUrl.includes("api.x.ai");
-	const isMistral = provider === "mistral" || baseUrl.includes("mistral.ai");
+	const isGrok = provider === "xai" || baseUrl.includes("api.x.ai") || /\bgrok\b/i.test(model.id);
+	const isMistral = provider === "mistral" || baseUrl.includes("mistral.ai") || /\bmistral\b/i.test(model.id);
 
 	const reasoningEffortMap: NonNullable<OpenAICompat["reasoningEffortMap"]> =
 		provider === "groq" && model.id === "qwen/qwen3-32b"
@@ -148,8 +134,6 @@ export function detectOpenAICompat(model: Model<"openai-completions">, resolvedB
 		// Kimi and OpenRouter accept them when actual reasoning is unavailable.
 		allowsSyntheticReasoningContentForToolCalls: !isDeepseekFamily || !model.reasoning,
 		requiresAssistantContentForToolCalls: isKimiModel,
-		openRouterRouting: undefined,
-		vercelGatewayRouting: undefined,
 		supportsStrictMode: detectStrictModeSupport(provider, baseUrl),
 		extraBody: undefined,
 		toolStrictMode: isCerebras ? "all_strict" : "mixed",
@@ -197,8 +181,6 @@ export function resolveOpenAICompat(
 		disableReasoningOnForcedToolChoice:
 			model.compat.disableReasoningOnForcedToolChoice ?? detected.disableReasoningOnForcedToolChoice,
 		disableReasoningOnToolChoice: model.compat.disableReasoningOnToolChoice ?? detected.disableReasoningOnToolChoice,
-		openRouterRouting: model.compat.openRouterRouting ?? detected.openRouterRouting,
-		vercelGatewayRouting: model.compat.vercelGatewayRouting ?? detected.vercelGatewayRouting,
 		supportsStrictMode: model.compat.supportsStrictMode ?? detected.supportsStrictMode,
 		extraBody: model.compat.extraBody,
 		toolStrictMode: model.compat.toolStrictMode ?? detected.toolStrictMode,

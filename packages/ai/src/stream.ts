@@ -1,7 +1,4 @@
-import * as fs from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
-import { $env, $pickenv } from "@oh-my-pi/pi-utils";
+import { $env } from "@oh-my-pi/pi-utils";
 import { getCustomApi } from "./api-registry";
 import type { Effort } from "./model-thinking";
 import {
@@ -9,38 +6,14 @@ import {
 	mapEffortToGoogleThinkingLevel,
 	requireSupportedEffort,
 } from "./model-thinking";
-import type { BedrockOptions } from "./providers/amazon-bedrock";
 import type { AnthropicOptions } from "./providers/anthropic";
-import type { CursorOptions } from "./providers/cursor";
-import { isGitLabDuoModel, streamGitLabDuo } from "./providers/gitlab-duo";
 import type { GoogleOptions } from "./providers/google";
-import type { GoogleGeminiCliOptions } from "./providers/google-gemini-cli";
-import type { GoogleVertexOptions } from "./providers/google-vertex";
-import { isKimiModel, streamKimi } from "./providers/kimi";
-import type { OllamaChatOptions } from "./providers/ollama";
 import type { OpenAICompletionsOptions } from "./providers/openai-completions";
 // Heavy provider stream functions are imported lazily via register-builtins,
 // which wraps each provider module in a dynamic import. This keeps the
 // AWS SDK, google-auth-library, @google/genai, @bufbuild/protobuf, and
-// other provider SDKs out of the CLI startup parse graph. The
-// gitlab-duo / kimi / synthetic providers stay eager because their modules
-// export routing predicates (isGitLabDuoModel, isKimiModel, isSyntheticModel)
-// that must be callable synchronously before streaming begins, and their
-// modules are thin wrappers with no heavy SDK dependencies.
-import {
-	streamAnthropic,
-	streamAzureOpenAIResponses,
-	streamBedrock,
-	streamCursor,
-	streamGoogle,
-	streamGoogleGeminiCli,
-	streamGoogleVertex,
-	streamOllama,
-	streamOpenAICodexResponses,
-	streamOpenAICompletions,
-	streamOpenAIResponses,
-} from "./providers/register-builtins";
-import { isSyntheticModel, streamSynthetic } from "./providers/synthetic";
+// other provider SDKs out of the CLI startup parse graph.
+import { streamAnthropic, streamGoogle, streamOpenAICompletions } from "./providers/register-builtins";
 import type {
 	Api,
 	AssistantMessage,
@@ -53,113 +26,11 @@ import type {
 	ThinkingBudgets,
 	ToolChoice,
 } from "./types";
-import { isFoundryEnabled } from "./utils/foundry";
-
-let cachedVertexAdcCredentialsExists: boolean | null = null;
-
-function hasVertexAdcCredentials(): boolean {
-	if (cachedVertexAdcCredentialsExists === null) {
-		const gacPath = $env.GOOGLE_APPLICATION_CREDENTIALS;
-		if (gacPath) {
-			cachedVertexAdcCredentialsExists = fs.existsSync(gacPath);
-		} else {
-			cachedVertexAdcCredentialsExists = fs.existsSync(
-				path.join(os.homedir(), ".config", "gcloud", "application_default_credentials.json"),
-			);
-		}
-	}
-	return cachedVertexAdcCredentialsExists;
-}
 
 type KeyResolver = string | (() => string | undefined);
 
 const serviceProviderMap: Record<string, KeyResolver> = {
-	"alibaba-coding-plan": "ALIBABA_CODING_PLAN_API_KEY",
-	openai: "OPENAI_API_KEY",
-	google: "GEMINI_API_KEY",
-	groq: "GROQ_API_KEY",
-	cerebras: "CEREBRAS_API_KEY",
-	xai: "XAI_API_KEY",
-	fireworks: "FIREWORKS_API_KEY",
-	openrouter: "OPENROUTER_API_KEY",
-	kilo: "KILO_API_KEY",
-	"vercel-ai-gateway": "AI_GATEWAY_API_KEY",
-	zai: "ZAI_API_KEY",
-	mistral: "MISTRAL_API_KEY",
-	minimax: "MINIMAX_API_KEY",
-	"minimax-code": "MINIMAX_CODE_API_KEY",
-	"minimax-code-cn": "MINIMAX_CODE_CN_API_KEY",
-	"opencode-go": "OPENCODE_API_KEY",
-	"opencode-zen": "OPENCODE_API_KEY",
-	cursor: "CURSOR_ACCESS_TOKEN",
-	deepseek: "DEEPSEEK_API_KEY",
-	"openai-codex": "OPENAI_CODEX_OAUTH_TOKEN",
-	"azure-openai-responses": "AZURE_OPENAI_API_KEY",
-	exa: "EXA_API_KEY",
-	jina: "JINA_API_KEY",
-	brave: "BRAVE_API_KEY",
-	perplexity: "PERPLEXITY_API_KEY",
-	tavily: "TAVILY_API_KEY",
-	parallel: "PARALLEL_API_KEY",
-	kagi: "KAGI_API_KEY",
-	// GitHub Copilot uses GitHub personal access token
-	"github-copilot": () => $pickenv("COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"),
-	// Foundry mode optionally switches Anthropic auth to enterprise gateway credentials.
-	anthropic: () =>
-		isFoundryEnabled()
-			? $pickenv("ANTHROPIC_FOUNDRY_API_KEY", "ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY")
-			: $pickenv("ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"),
-	"gitlab-duo": "GITLAB_TOKEN",
-	// Vertex AI supports either GOOGLE_CLOUD_API_KEY or Application Default Credentials.
-	"google-vertex": () => {
-		if ($env.GOOGLE_CLOUD_API_KEY) {
-			return $env.GOOGLE_CLOUD_API_KEY;
-		}
-		const hasCredentials = hasVertexAdcCredentials();
-		const hasProject = !!($env.GOOGLE_CLOUD_PROJECT || $env.GCLOUD_PROJECT);
-		const hasLocation = !!$env.GOOGLE_CLOUD_LOCATION;
-		if (hasCredentials && hasProject && hasLocation) {
-			return "<authenticated>";
-		}
-	},
-	// Amazon Bedrock supports multiple credential sources:
-	// 1. AWS_PROFILE - named profile from ~/.aws/credentials
-	// 2. AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY - standard IAM keys
-	// 3. AWS_BEARER_TOKEN_BEDROCK - Bedrock API keys (bearer token)
-	// 4. AWS_CONTAINER_CREDENTIALS_* - ECS/Task IAM role credentials
-	// 5. AWS_WEB_IDENTITY_TOKEN_FILE + AWS_ROLE_ARN - IRSA (EKS) web identity
-	"amazon-bedrock": () => {
-		const hasEcsCredentials =
-			!!$env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI || !!$env.AWS_CONTAINER_CREDENTIALS_FULL_URI;
-		const hasWebIdentity = !!$env.AWS_WEB_IDENTITY_TOKEN_FILE && !!$env.AWS_ROLE_ARN;
-		if (
-			$env.AWS_PROFILE ||
-			($env.AWS_ACCESS_KEY_ID && $env.AWS_SECRET_ACCESS_KEY) ||
-			$env.AWS_BEARER_TOKEN_BEDROCK ||
-			hasEcsCredentials ||
-			hasWebIdentity
-		) {
-			return "<authenticated>";
-		}
-	},
-	synthetic: "SYNTHETIC_API_KEY",
-	"cloudflare-ai-gateway": "CLOUDFLARE_AI_GATEWAY_API_KEY",
-	huggingface: () => $pickenv("HUGGINGFACE_HUB_TOKEN", "HF_TOKEN"),
 	litellm: "LITELLM_API_KEY",
-	moonshot: "MOONSHOT_API_KEY",
-	nvidia: "NVIDIA_API_KEY",
-	nanogpt: "NANO_GPT_API_KEY",
-	"lm-studio": "LM_STUDIO_API_KEY",
-	ollama: "OLLAMA_API_KEY",
-	"ollama-cloud": "OLLAMA_CLOUD_API_KEY",
-	"llama.cpp": "LLAMA_CPP_API_KEY",
-	qianfan: "QIANFAN_API_KEY",
-	"qwen-portal": () => $pickenv("QWEN_OAUTH_TOKEN", "QWEN_PORTAL_API_KEY"),
-	together: "TOGETHER_API_KEY",
-	zenmux: "ZENMUX_API_KEY",
-	venice: "VENICE_API_KEY",
-	vllm: "VLLM_API_KEY",
-	xiaomi: "XIAOMI_API_KEY",
 };
 
 /**
@@ -187,25 +58,6 @@ export function stream<TApi extends Api>(
 		return customApiProvider.stream(model, context, options as StreamOptions);
 	}
 
-	if (isGitLabDuoModel(model)) {
-		const apiKey = (options as StreamOptions | undefined)?.apiKey || getEnvApiKey(model.provider);
-		if (!apiKey) {
-			throw new Error(`No API key for provider: ${model.provider}`);
-		}
-		return streamGitLabDuo(model, context, {
-			...(options as SimpleStreamOptions | undefined),
-			apiKey,
-		});
-	}
-
-	// Vertex AI uses Application Default Credentials, not API keys
-	if (model.api === "google-vertex") {
-		return streamGoogleVertex(model as Model<"google-vertex">, context, options as GoogleVertexOptions);
-	} else if (model.api === "bedrock-converse-stream") {
-		// Bedrock doesn't have any API keys instead it sources credentials from standard AWS env variables or from given AWS profile.
-		return streamBedrock(model as Model<"bedrock-converse-stream">, context, (options || {}) as BedrockOptions);
-	}
-
 	const apiKey = options?.apiKey || getEnvApiKey(model.provider);
 	if (!apiKey) {
 		throw new Error(`No API key for provider: ${model.provider}`);
@@ -225,30 +77,8 @@ export function stream<TApi extends Api>(
 		case "openai-completions":
 			return streamOpenAICompletions(model as Model<"openai-completions">, context, providerOptions as any);
 
-		case "openai-responses":
-			return streamOpenAIResponses(model as Model<"openai-responses">, context, providerOptions as any);
-
-		case "azure-openai-responses":
-			return streamAzureOpenAIResponses(model as Model<"azure-openai-responses">, context, providerOptions as any);
-
-		case "openai-codex-responses":
-			return streamOpenAICodexResponses(model as Model<"openai-codex-responses">, context, providerOptions as any);
-
 		case "google-generative-ai":
 			return streamGoogle(model as Model<"google-generative-ai">, context, providerOptions);
-
-		case "google-gemini-cli":
-			return streamGoogleGeminiCli(
-				model as Model<"google-gemini-cli">,
-				context,
-				providerOptions as GoogleGeminiCliOptions,
-			);
-
-		case "ollama-chat":
-			return streamOllama(model as Model<"ollama-chat">, context, providerOptions as OllamaChatOptions);
-
-		case "cursor-agent":
-			return streamCursor(model as Model<"cursor-agent">, context, providerOptions as CursorOptions);
 
 		default:
 			throw new Error(`Unhandled API: ${api}`);
@@ -275,47 +105,9 @@ export function streamSimple<TApi extends Api>(
 		return customApiProvider.streamSimple(model, context, options);
 	}
 
-	// Vertex AI uses Application Default Credentials, not API keys
-	if (model.api === "google-vertex") {
-		const providerOptions = mapOptionsForApi(model, options, undefined);
-		return stream(model, context, providerOptions);
-	} else if (model.api === "bedrock-converse-stream") {
-		// Bedrock doesn't have any API keys instead it sources credentials from standard AWS env variables or from given AWS profile.
-		const providerOptions = mapOptionsForApi(model, options, undefined);
-		return stream(model, context, providerOptions);
-	}
-
 	const apiKey = options?.apiKey || getEnvApiKey(model.provider);
 	if (!apiKey) {
 		throw new Error(`No API key for provider: ${model.provider}`);
-	}
-
-	// GitLab Duo - wraps Anthropic/OpenAI behind GitLab AI Gateway direct access tokens
-	if (isGitLabDuoModel(model)) {
-		return streamGitLabDuo(model, context, {
-			...options,
-			apiKey,
-		});
-	}
-
-	// Kimi Code - route to dedicated handler that wraps OpenAI or Anthropic API
-	if (isKimiModel(model)) {
-		// Pass raw SimpleStreamOptions - streamKimi handles mapping internally
-		return streamKimi(model as Model<"openai-completions">, context, {
-			...options,
-			apiKey,
-			format: options?.kimiApiFormat ?? "anthropic",
-		});
-	}
-
-	// Synthetic - route to dedicated handler that wraps OpenAI or Anthropic API
-	if (isSyntheticModel(model)) {
-		// Pass raw SimpleStreamOptions - streamSynthetic handles mapping internally
-		return streamSynthetic(model as Model<"openai-completions">, context, {
-			...options,
-			apiKey,
-			format: options?.syntheticApiFormat ?? "openai", // Default to OpenAI format
-		});
 	}
 
 	const providerOptions = mapOptionsForApi(model, options, apiKey);
@@ -343,32 +135,6 @@ export const ANTHROPIC_THINKING: Record<Effort, number> = {
 	xhigh: 32768,
 };
 
-const GOOGLE_THINKING: Record<Effort, number> = {
-	minimal: 1024,
-	low: 4096,
-	medium: 8192,
-	high: 16384,
-	xhigh: 24575,
-};
-
-const BEDROCK_CLAUDE_THINKING: Record<Effort, number> = {
-	minimal: 1024,
-	low: 2048,
-	medium: 8192,
-	high: 16384,
-	xhigh: 16384,
-};
-
-function resolveBedrockThinkingBudget(
-	model: Model<"bedrock-converse-stream">,
-	options?: SimpleStreamOptions,
-): { budget: number; level: Effort } | null {
-	if (!options?.reasoning || !model.reasoning) return null;
-	const level = requireSupportedEffort(model, options.reasoning);
-	const budget = options.thinkingBudgets?.[level] ?? BEDROCK_CLAUDE_THINKING[level];
-	return { budget, level };
-}
-
 export function mapAnthropicToolChoice(choice?: ToolChoice): AnthropicOptions["toolChoice"] {
 	if (!choice) return undefined;
 	if (typeof choice === "string") {
@@ -386,9 +152,7 @@ export function mapAnthropicToolChoice(choice?: ToolChoice): AnthropicOptions["t
 	return undefined;
 }
 
-function mapGoogleToolChoice(
-	choice?: ToolChoice,
-): GoogleOptions["toolChoice"] | GoogleGeminiCliOptions["toolChoice"] | GoogleVertexOptions["toolChoice"] {
+function mapGoogleToolChoice(choice?: ToolChoice): GoogleOptions["toolChoice"] {
 	if (!choice) return undefined;
 	if (typeof choice === "string") {
 		if (choice === "required") return "any";
@@ -450,7 +214,6 @@ function mapOptionsForApi<TApi extends Api>(
 		providerSessionState: options?.providerSessionState,
 		onPayload: options?.onPayload,
 		onResponse: options?.onResponse,
-		execHandlers: options?.execHandlers,
 	};
 
 	switch (model.api) {
@@ -521,34 +284,6 @@ function mapOptionsForApi<TApi extends Api>(
 			}
 		}
 
-		case "bedrock-converse-stream": {
-			const bedrockBase: BedrockOptions = {
-				...base,
-				reasoning: options?.reasoning,
-				thinkingBudgets: options?.thinkingBudgets,
-				toolChoice: mapAnthropicToolChoice(options?.toolChoice),
-			};
-			// Adaptive mode sends effort directly, no budget_tokens — skip budget inflation.
-			if (model.thinking?.mode === "anthropic-adaptive") {
-				return castApi<"bedrock-converse-stream">(bedrockBase);
-			}
-			const budgetInfo = resolveBedrockThinkingBudget(model as Model<"bedrock-converse-stream">, options);
-			if (!budgetInfo) return bedrockBase as OptionsForApi<TApi>;
-			let maxTokens = bedrockBase.maxTokens ?? model.maxTokens;
-			let thinkingBudgets = bedrockBase.thinkingBudgets;
-			if (maxTokens <= budgetInfo.budget) {
-				const desiredMaxTokens = Math.min(model.maxTokens, budgetInfo.budget + MIN_OUTPUT_TOKENS);
-				if (desiredMaxTokens > maxTokens) {
-					maxTokens = desiredMaxTokens;
-				}
-			}
-			if (maxTokens <= budgetInfo.budget) {
-				const adjustedBudget = Math.max(0, maxTokens - MIN_OUTPUT_TOKENS);
-				thinkingBudgets = { ...(thinkingBudgets ?? {}), [budgetInfo.level]: adjustedBudget };
-			}
-			return castApi<"bedrock-converse-stream">({ ...bedrockBase, maxTokens, thinkingBudgets });
-		}
-
 		case "openai-completions":
 			return castApi<"openai-completions">({
 				...base,
@@ -556,31 +291,6 @@ function mapOptionsForApi<TApi extends Api>(
 				disableReasoning: options?.disableReasoning,
 				toolChoice: mapOpenAiToolChoice(options?.toolChoice),
 				serviceTier: options?.serviceTier,
-			});
-
-		case "openai-responses":
-			return castApi<"openai-responses">({
-				...base,
-				reasoning: resolveOpenAiReasoningEffort(model, options),
-				toolChoice: mapOpenAiToolChoice(options?.toolChoice),
-				serviceTier: options?.serviceTier,
-			});
-
-		case "azure-openai-responses":
-			return castApi<"azure-openai-responses">({
-				...base,
-				reasoning: resolveOpenAiReasoningEffort(model, options),
-				toolChoice: mapOpenAiToolChoice(options?.toolChoice),
-				serviceTier: options?.serviceTier,
-			});
-
-		case "openai-codex-responses":
-			return castApi<"openai-codex-responses">({
-				...base,
-				reasoning: resolveOpenAiReasoningEffort(model, options),
-				toolChoice: mapOpenAiToolChoice(options?.toolChoice),
-				serviceTier: options?.serviceTier,
-				preferWebsockets: options?.preferWebsockets,
 			});
 
 		case "google-generative-ai": {
@@ -611,117 +321,13 @@ function mapOptionsForApi<TApi extends Api>(
 				});
 			}
 
-			return castApi<"google-gemini-cli">({
+			return castApi<"google-generative-ai">({
 				...base,
 				thinking: {
 					enabled: true,
 					budgetTokens: getGoogleBudget(googleModel, effort, options?.thinkingBudgets),
 				},
 				toolChoice: mapGoogleToolChoice(options?.toolChoice),
-			});
-		}
-
-		case "google-gemini-cli": {
-			const reasoning = options?.reasoning;
-			if (!reasoning || !model.reasoning) {
-				return castApi<"google-gemini-cli">({
-					...base,
-					thinking: { enabled: false },
-					toolChoice: mapGoogleToolChoice(options?.toolChoice),
-				});
-			}
-
-			const effort = requireSupportedEffort(model, reasoning);
-
-			// Gemini 3+ models use thinkingLevel instead of thinkingBudget
-			if (model.thinking?.mode === "google-level") {
-				return castApi<"google-gemini-cli">({
-					...base,
-					thinking: {
-						enabled: true,
-						level: mapEffortToGoogleThinkingLevel(model, effort),
-					},
-					toolChoice: mapGoogleToolChoice(options?.toolChoice),
-				});
-			}
-
-			let thinkingBudget = options.thinkingBudgets?.[effort] ?? GOOGLE_THINKING[effort];
-
-			// Caller's maxTokens is the desired output; add thinking budget on top, capped at model limit
-			const maxTokens = Math.min((base.maxTokens || 0) + thinkingBudget, model.maxTokens);
-
-			// If not enough room for thinking + output, reduce thinking budget
-			if (maxTokens <= thinkingBudget) {
-				thinkingBudget = Math.max(0, maxTokens - MIN_OUTPUT_TOKENS) ?? 0;
-			}
-
-			// If thinking budget is too low, disable thinking
-			if (thinkingBudget <= 0) {
-				return castApi<"google-gemini-cli">({
-					...base,
-					thinking: { enabled: false },
-					toolChoice: mapGoogleToolChoice(options?.toolChoice),
-				});
-			} else {
-				return castApi<"google-gemini-cli">({
-					...base,
-					maxTokens,
-					thinking: { enabled: true, budgetTokens: thinkingBudget },
-					toolChoice: mapGoogleToolChoice(options?.toolChoice),
-				});
-			}
-		}
-
-		case "google-vertex": {
-			// Explicitly disable thinking when reasoning is not specified or model doesn't support it
-			const reasoning = options?.reasoning;
-			if (!reasoning || !model.reasoning) {
-				return castApi<"google-vertex">({
-					...base,
-					thinking: { enabled: false },
-					toolChoice: mapGoogleToolChoice(options?.toolChoice),
-				});
-			}
-
-			const vertexModel = model as Model<"google-vertex">;
-			const effort = requireSupportedEffort(vertexModel, reasoning);
-			const geminiModel = vertexModel as unknown as Model<"google-generative-ai">;
-
-			if (geminiModel.thinking?.mode === "google-level") {
-				return castApi<"google-vertex">({
-					...base,
-					thinking: {
-						enabled: true,
-						level: mapEffortToGoogleThinkingLevel(geminiModel, effort),
-					},
-					toolChoice: mapGoogleToolChoice(options?.toolChoice),
-				});
-			}
-
-			return castApi<"google-vertex">({
-				...base,
-				thinking: {
-					enabled: true,
-					budgetTokens: getGoogleBudget(geminiModel, effort, options?.thinkingBudgets),
-				},
-				toolChoice: mapGoogleToolChoice(options?.toolChoice),
-			});
-		}
-
-		case "ollama-chat":
-			return castApi<"ollama-chat">({
-				...base,
-				reasoning: resolveOpenAiReasoningEffort(model, options),
-				toolChoice: options?.toolChoice,
-			});
-
-		case "cursor-agent": {
-			const execHandlers = options?.cursorExecHandlers ?? options?.execHandlers;
-			const onToolResult = options?.cursorOnToolResult ?? execHandlers?.onToolResult;
-			return castApi<"cursor-agent">({
-				...base,
-				execHandlers,
-				onToolResult,
 			});
 		}
 

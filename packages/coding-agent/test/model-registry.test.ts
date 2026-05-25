@@ -1107,47 +1107,7 @@ describe("ModelRegistry", () => {
 			expect(opus?.name).not.toBe("Custom Sonnet Name");
 		});
 
-		test("model override with compat.openRouterRouting", () => {
-			writeRawModelsJson({
-				openrouter: {
-					modelOverrides: {
-						"anthropic/claude-sonnet-4": {
-							compat: {
-								openRouterRouting: { only: ["amazon-bedrock"] },
-							},
-						},
-					},
-				},
-			});
 
-			const registry = new ModelRegistry(authStorage, modelsJsonPath);
-			const models = getModelsForProvider(registry, "openrouter");
-
-			const sonnet = models.find(m => m.id === "anthropic/claude-sonnet-4");
-			const compat = sonnet?.compat as OpenAICompat | undefined;
-			expect(compat?.openRouterRouting).toEqual({ only: ["amazon-bedrock"] });
-		});
-
-		test("model override deep merges compat settings", () => {
-			writeRawModelsJson({
-				openrouter: {
-					modelOverrides: {
-						"anthropic/claude-sonnet-4": {
-							compat: {
-								openRouterRouting: { order: ["anthropic", "together"] },
-							},
-						},
-					},
-				},
-			});
-
-			const registry = new ModelRegistry(authStorage, modelsJsonPath);
-			const models = getModelsForProvider(registry, "openrouter");
-			const sonnet = models.find(m => m.id === "anthropic/claude-sonnet-4");
-
-			const compat = sonnet?.compat as OpenAICompat | undefined;
-			expect(compat?.openRouterRouting).toEqual({ order: ["anthropic", "together"] });
-		});
 
 		test("model override merges compat.extraBody across provider+model", () => {
 			writeRawModelsJson({
@@ -1183,10 +1143,10 @@ describe("ModelRegistry", () => {
 				openrouter: {
 					modelOverrides: {
 						"anthropic/claude-sonnet-4": {
-							compat: { openRouterRouting: { only: ["amazon-bedrock"] } },
+							compat: { extraBody: { tier: "premium" } },
 						},
 						"anthropic/claude-opus-4": {
-							compat: { openRouterRouting: { only: ["anthropic"] } },
+							compat: { extraBody: { tier: "standard" } },
 						},
 					},
 				},
@@ -1200,8 +1160,8 @@ describe("ModelRegistry", () => {
 
 			const sonnetCompat = sonnet?.compat as OpenAICompat | undefined;
 			const opusCompat = opus?.compat as OpenAICompat | undefined;
-			expect(sonnetCompat?.openRouterRouting).toEqual({ only: ["amazon-bedrock"] });
-			expect(opusCompat?.openRouterRouting).toEqual({ only: ["anthropic"] });
+			expect(sonnetCompat?.extraBody).toEqual({ tier: "premium" });
+			expect(opusCompat?.extraBody).toEqual({ tier: "standard" });
 		});
 
 		test("model override combined with baseUrl override", () => {

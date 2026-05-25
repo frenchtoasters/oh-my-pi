@@ -4,11 +4,6 @@ import { complete, stream } from "@oh-my-pi/pi-ai/stream";
 import type { Api, Context, Model, OptionsForApi } from "@oh-my-pi/pi-ai/types";
 import { e2eApiKey, resolveApiKey } from "./oauth";
 
-// Resolve OAuth tokens at module level (async, runs before tests)
-const [geminiCliToken, openaiCodexToken] = await Promise.all([
-	resolveApiKey("google-gemini-cli"),
-	resolveApiKey("openai-codex"),
-]);
 
 async function testAbortSignal<TApi extends Api>(llm: Model<TApi>, options: OptionsForApi<TApi> = {}) {
 	const context: Context = {
@@ -88,8 +83,8 @@ describe("AI Providers Abort Tests", () => {
 	});
 
 	describe.skipIf(!e2eApiKey("OPENAI_API_KEY"))("OpenAI Completions Provider Abort", () => {
-		const llm: Model<"openai-completions"> = {
-			...getBundledModel("openai", "gpt-4o-mini")!,
+	const llm: Model<"openai-completions"> = {
+		...getBundledModel("litellm", "gpt-5.4-mini")!,
 			api: "openai-completions",
 		};
 
@@ -111,7 +106,7 @@ describe("AI Providers Abort Tests", () => {
 	});
 
 	describe.skipIf(!e2eApiKey("OPENAI_API_KEY"))("OpenAI Responses Provider Abort", () => {
-		const llm = getBundledModel("openai", "gpt-5-mini");
+	const llm = getBundledModel("litellm", "gpt-5.4");
 
 		it(
 			"should abort mid-stream",
@@ -170,44 +165,5 @@ describe("AI Providers Abort Tests", () => {
 		);
 	});
 
-	// Google Gemini CLI / Antigravity share the same provider, so one test covers both
-	describe("Google Gemini CLI Provider Abort", () => {
-		it.skipIf(!geminiCliToken)(
-			"should abort mid-stream",
-			async () => {
-				const llm = getBundledModel("google-gemini-cli", "gemini-2.5-flash");
-				await testAbortSignal(llm, { apiKey: geminiCliToken });
-			},
-			{ retry: 3 },
-		);
 
-		it.skipIf(!geminiCliToken)(
-			"should handle immediate abort",
-			async () => {
-				const llm = getBundledModel("google-gemini-cli", "gemini-2.5-flash");
-				await testImmediateAbort(llm, { apiKey: geminiCliToken });
-			},
-			{ retry: 3 },
-		);
-	});
-
-	describe("OpenAI Codex Provider Abort", () => {
-		it.skipIf(!openaiCodexToken)(
-			"should abort mid-stream",
-			async () => {
-				const llm = getBundledModel("openai-codex", "gpt-5.2-codex");
-				await testAbortSignal(llm, { apiKey: openaiCodexToken });
-			},
-			{ retry: 3 },
-		);
-
-		it.skipIf(!openaiCodexToken)(
-			"should handle immediate abort",
-			async () => {
-				const llm = getBundledModel("openai-codex", "gpt-5.2-codex");
-				await testImmediateAbort(llm, { apiKey: openaiCodexToken });
-			},
-			{ retry: 3 },
-		);
-	});
 });

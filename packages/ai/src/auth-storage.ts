@@ -21,13 +21,6 @@ import type {
 	UsageProvider,
 	UsageReport,
 } from "./usage";
-import { claudeRankingStrategy, claudeUsageProvider } from "./usage/claude";
-import { googleGeminiCliUsageProvider } from "./usage/gemini";
-import { githubCopilotUsageProvider } from "./usage/github-copilot";
-import { antigravityUsageProvider } from "./usage/google-antigravity";
-import { kimiUsageProvider } from "./usage/kimi";
-import { codexRankingStrategy, openaiCodexUsageProvider } from "./usage/openai-codex";
-import { zaiUsageProvider } from "./usage/zai";
 import { getOAuthApiKey, getOAuthProvider, refreshOAuthToken } from "./utils/oauth";
 import type { OAuthController, OAuthCredentials, OAuthProvider, OAuthProviderId } from "./utils/oauth/types";
 
@@ -113,16 +106,7 @@ async function defaultConfigValueResolver(config: string): Promise<string | unde
 // Usage Providers (defaults)
 // ─────────────────────────────────────────────────────────────────────────────
 
-const DEFAULT_USAGE_PROVIDERS: UsageProvider[] = [
-	openaiCodexUsageProvider,
-	kimiUsageProvider,
-	antigravityUsageProvider,
-	googleGeminiCliUsageProvider,
-	claudeUsageProvider,
-	zaiUsageProvider,
-	githubCopilotUsageProvider,
-];
-
+const DEFAULT_USAGE_PROVIDERS: UsageProvider[] = [];
 const DEFAULT_USAGE_PROVIDER_MAP = new Map<Provider, UsageProvider>(
 	DEFAULT_USAGE_PROVIDERS.map(provider => [provider.id, provider]),
 );
@@ -154,35 +138,11 @@ type AuthApiKeyOptions = {
 	modelId?: string;
 };
 
-function requiresOpenAICodexProModel(provider: string, modelId: string | undefined): boolean {
-	return provider === "openai-codex" && typeof modelId === "string" && modelId.includes("-spark");
-}
-
-function getUsagePlanType(report: UsageReport | null): string | undefined {
-	const metadata = report?.metadata;
-	if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return undefined;
-	const planType = (metadata as { planType?: unknown }).planType;
-	return typeof planType === "string" ? planType.toLowerCase() : undefined;
-}
-
-function getOpenAICodexPlanPriority(report: UsageReport | null): number {
-	const planType = getUsagePlanType(report);
-	if (!planType) return 1;
-	return planType.includes("pro") ? 0 : 2;
-}
-
-function hasOpenAICodexProPlan(report: UsageReport | null): boolean {
-	return getUsagePlanType(report)?.includes("pro") === true;
-}
-
 function resolveDefaultUsageProvider(provider: Provider): UsageProvider | undefined {
 	return DEFAULT_USAGE_PROVIDER_MAP.get(provider);
 }
 
-const DEFAULT_RANKING_STRATEGIES = new Map<Provider, CredentialRankingStrategy>([
-	["openai-codex", codexRankingStrategy],
-	["anthropic", claudeRankingStrategy],
-]);
+const DEFAULT_RANKING_STRATEGIES = new Map<Provider, CredentialRankingStrategy>();
 
 function resolveDefaultRankingStrategy(provider: Provider): CredentialRankingStrategy | undefined {
 	return DEFAULT_RANKING_STRATEGIES.get(provider);
@@ -708,7 +668,7 @@ export class AuthStorage {
 		ctrl: OAuthController & {
 			/** onAuth is required by auth-storage but optional in OAuthController */
 			onAuth: (info: { url: string; instructions?: string }) => void;
-			/** onPrompt is required for some providers (github-copilot, openai-codex) */
+			/** onPrompt for manual authorization code input */
 			onPrompt: (prompt: { message: string; placeholder?: string }) => Promise<string>;
 		},
 	): Promise<void> {
@@ -719,248 +679,9 @@ export class AuthStorage {
 		};
 		const manualCodeInput = () => ctrl.onPrompt({ message: "Paste the authorization code (or full redirect URL):" });
 		switch (provider) {
-			case "anthropic": {
-				const { loginAnthropic } = await import("./utils/oauth/anthropic");
-				credentials = await loginAnthropic({
-					...ctrl,
-					onManualCodeInput: ctrl.onManualCodeInput ?? manualCodeInput,
-				});
-				break;
-			}
-			case "alibaba-coding-plan": {
-				const { loginAlibabaCodingPlan } = await import("./utils/oauth/alibaba-coding-plan");
-				const apiKey = await loginAlibabaCodingPlan(ctrl);
-				await saveApiKeyCredential(apiKey);
-				return;
-			}
-			case "github-copilot": {
-				const { loginGitHubCopilot } = await import("./utils/oauth/github-copilot");
-				credentials = await loginGitHubCopilot({
-					onAuth: (url, instructions) => ctrl.onAuth({ url, instructions }),
-					onPrompt: ctrl.onPrompt,
-					onProgress: ctrl.onProgress,
-					signal: ctrl.signal,
-				});
-				break;
-			}
-			case "google-gemini-cli": {
-				const { loginGeminiCli } = await import("./utils/oauth/google-gemini-cli");
-				credentials = await loginGeminiCli({
-					...ctrl,
-					onManualCodeInput: ctrl.onManualCodeInput ?? manualCodeInput,
-				});
-				break;
-			}
-			case "google-antigravity": {
-				const { loginAntigravity } = await import("./utils/oauth/google-antigravity");
-				credentials = await loginAntigravity({
-					...ctrl,
-					onManualCodeInput: ctrl.onManualCodeInput ?? manualCodeInput,
-				});
-				break;
-			}
-			case "openai-codex": {
-				const { loginOpenAICodex } = await import("./utils/oauth/openai-codex");
-				credentials = await loginOpenAICodex({
-					...ctrl,
-					onManualCodeInput: ctrl.onManualCodeInput ?? manualCodeInput,
-				});
-				break;
-			}
-			case "gitlab-duo": {
-				const { loginGitLabDuo } = await import("./utils/oauth/gitlab-duo");
-				credentials = await loginGitLabDuo({
-					...ctrl,
-					onManualCodeInput: ctrl.onManualCodeInput ?? manualCodeInput,
-				});
-				break;
-			}
-			case "kimi-code": {
-				const { loginKimi } = await import("./utils/oauth/kimi");
-				credentials = await loginKimi(ctrl);
-				break;
-			}
-			case "kilo": {
-				const { loginKilo } = await import("./utils/oauth/kilo");
-				credentials = await loginKilo(ctrl);
-				break;
-			}
-			case "cursor": {
-				const { loginCursor } = await import("./utils/oauth/cursor");
-				credentials = await loginCursor(
-					url => ctrl.onAuth({ url }),
-					ctrl.onProgress ? () => ctrl.onProgress?.("Waiting for browser authentication...") : undefined,
-				);
-				break;
-			}
-			case "perplexity": {
-				const { loginPerplexity } = await import("./utils/oauth/perplexity");
-				credentials = await loginPerplexity(ctrl);
-				break;
-			}
-			case "huggingface": {
-				const { loginHuggingface } = await import("./utils/oauth/huggingface");
-				const apiKey = await loginHuggingface(ctrl);
-				await saveApiKeyCredential(apiKey);
-				return;
-			}
-			case "opencode-zen":
-			case "opencode-go": {
-				const { loginOpenCode } = await import("./utils/oauth/opencode");
-				const apiKey = await loginOpenCode(ctrl);
-				await saveApiKeyCredential(apiKey);
-				return;
-			}
-			case "lm-studio": {
-				const { loginLmStudio } = await import("./utils/oauth/lm-studio");
-				const apiKey = await loginLmStudio(ctrl);
-				await saveApiKeyCredential(apiKey);
-				return;
-			}
-			case "ollama": {
-				const { loginOllama } = await import("./utils/oauth/ollama");
-				const apiKey = await loginOllama(ctrl);
-				if (!apiKey) {
-					return;
-				}
-				await saveApiKeyCredential(apiKey);
-				return;
-			}
-			case "ollama-cloud": {
-				const { loginOllamaCloud } = await import("./utils/oauth/ollama-cloud");
-				const apiKey = await loginOllamaCloud(ctrl);
-				await saveApiKeyCredential(apiKey);
-				return;
-			}
-			case "cerebras": {
-				const { loginCerebras } = await import("./utils/oauth/cerebras");
-				const apiKey = await loginCerebras(ctrl);
-				await saveApiKeyCredential(apiKey);
-				return;
-			}
-			case "fireworks": {
-				const { loginFireworks } = await import("./utils/oauth/fireworks");
-				const apiKey = await loginFireworks(ctrl);
-				await saveApiKeyCredential(apiKey);
-				return;
-			}
-			case "zai": {
-				const { loginZai } = await import("./utils/oauth/zai");
-				const apiKey = await loginZai(ctrl);
-				await saveApiKeyCredential(apiKey);
-				return;
-			}
-			case "qianfan": {
-				const { loginQianfan } = await import("./utils/oauth/qianfan");
-				const apiKey = await loginQianfan(ctrl);
-				await saveApiKeyCredential(apiKey);
-				return;
-			}
-			case "minimax-code": {
-				const { loginMiniMaxCode } = await import("./utils/oauth/minimax-code");
-				const apiKey = await loginMiniMaxCode(ctrl);
-				await saveApiKeyCredential(apiKey);
-				return;
-			}
-			case "minimax-code-cn": {
-				const { loginMiniMaxCodeCn } = await import("./utils/oauth/minimax-code");
-				const apiKey = await loginMiniMaxCodeCn(ctrl);
-				await saveApiKeyCredential(apiKey);
-				return;
-			}
-			case "synthetic": {
-				const { loginSynthetic } = await import("./utils/oauth/synthetic");
-				const apiKey = await loginSynthetic(ctrl);
-				await saveApiKeyCredential(apiKey);
-				return;
-			}
-			case "tavily": {
-				const { loginTavily } = await import("./utils/oauth/tavily");
-				const apiKey = await loginTavily(ctrl);
-				await saveApiKeyCredential(apiKey);
-				return;
-			}
-			case "venice": {
-				const { loginVenice } = await import("./utils/oauth/venice");
-				const apiKey = await loginVenice(ctrl);
-				await saveApiKeyCredential(apiKey);
-				return;
-			}
 			case "litellm": {
 				const { loginLiteLLM } = await import("./utils/oauth/litellm");
 				const apiKey = await loginLiteLLM(ctrl);
-				await saveApiKeyCredential(apiKey);
-				return;
-			}
-			case "moonshot": {
-				const { loginMoonshot } = await import("./utils/oauth/moonshot");
-				const apiKey = await loginMoonshot(ctrl);
-				await saveApiKeyCredential(apiKey);
-				return;
-			}
-			case "kagi": {
-				const { loginKagi } = await import("./utils/oauth/kagi");
-				const apiKey = await loginKagi(ctrl);
-				await saveApiKeyCredential(apiKey);
-				return;
-			}
-			case "nanogpt": {
-				const { loginNanoGPT } = await import("./utils/oauth/nanogpt");
-				const apiKey = await loginNanoGPT(ctrl);
-				await saveApiKeyCredential(apiKey);
-				return;
-			}
-			case "together": {
-				const { loginTogether } = await import("./utils/oauth/together");
-				const apiKey = await loginTogether(ctrl);
-				await saveApiKeyCredential(apiKey);
-				return;
-			}
-			case "cloudflare-ai-gateway": {
-				const { loginCloudflareAiGateway } = await import("./utils/oauth/cloudflare-ai-gateway");
-				const apiKey = await loginCloudflareAiGateway(ctrl);
-				await saveApiKeyCredential(apiKey);
-				return;
-			}
-			case "vercel-ai-gateway": {
-				const { loginVercelAiGateway } = await import("./utils/oauth/vercel-ai-gateway");
-				const apiKey = await loginVercelAiGateway(ctrl);
-				await saveApiKeyCredential(apiKey);
-				return;
-			}
-			case "vllm": {
-				const { loginVllm } = await import("./utils/oauth/vllm");
-				const apiKey = await loginVllm(ctrl);
-				await saveApiKeyCredential(apiKey);
-				return;
-			}
-			case "parallel": {
-				const { loginParallel } = await import("./utils/oauth/parallel");
-				const apiKey = await loginParallel(ctrl);
-				await saveApiKeyCredential(apiKey);
-				return;
-			}
-			case "qwen-portal": {
-				const { loginQwenPortal } = await import("./utils/oauth/qwen-portal");
-				const apiKey = await loginQwenPortal(ctrl);
-				await saveApiKeyCredential(apiKey);
-				return;
-			}
-			case "nvidia": {
-				const { loginNvidia } = await import("./utils/oauth/nvidia");
-				const apiKey = await loginNvidia(ctrl);
-				await saveApiKeyCredential(apiKey);
-				return;
-			}
-			case "xiaomi": {
-				const { loginXiaomi } = await import("./utils/oauth/xiaomi");
-				const apiKey = await loginXiaomi(ctrl);
-				await saveApiKeyCredential(apiKey);
-				return;
-			}
-			case "zenmux": {
-				const { loginZenMux } = await import("./utils/oauth/zenmux");
-				const apiKey = await loginZenMux(ctrl);
 				await saveApiKeyCredential(apiKey);
 				return;
 			}
@@ -1278,9 +999,6 @@ export class AuthStorage {
 		const identifiers: string[] = [];
 		const email = this.#getUsageReportMetadataValue(report, "email");
 		if (email) identifiers.push(`email:${email.toLowerCase()}`);
-		if (report.provider === "openai-codex" || report.provider === "anthropic") {
-			return identifiers.map(identifier => `${report.provider}:${identifier.toLowerCase()}`);
-		}
 		const accountId = this.#getUsageReportMetadataValue(report, "accountId");
 		if (accountId) identifiers.push(`account:${accountId}`);
 		const account = this.#getUsageReportMetadataValue(report, "account");
@@ -1642,11 +1360,6 @@ export class AuthStorage {
 				if (leftBlockedUntil !== rightBlockedUntil) return leftBlockedUntil - rightBlockedUntil;
 				return left.orderPos - right.orderPos;
 			}
-			if (requiresOpenAICodexProModel(args.provider, args.options?.modelId)) {
-				const leftPlanPriority = getOpenAICodexPlanPriority(left.usage);
-				const rightPlanPriority = getOpenAICodexPlanPriority(right.usage);
-				if (leftPlanPriority !== rightPlanPriority) return leftPlanPriority - rightPlanPriority;
-			}
 			if (left.hasPriorityBoost !== right.hasPriorityBoost) return left.hasPriorityBoost ? -1 : 1;
 			if (left.secondaryDrainRate !== right.secondaryDrainRate)
 				return left.secondaryDrainRate - right.secondaryDrainRate;
@@ -1681,8 +1394,7 @@ export class AuthStorage {
 		const providerKey = this.#getProviderTypeKey(provider, "oauth");
 		const order = this.#getCredentialOrder(providerKey, sessionId, credentials.length);
 		const strategy = this.#rankingStrategyResolver?.(provider);
-		const requiresProModel = requiresOpenAICodexProModel(provider, options?.modelId);
-		const checkUsage = strategy !== undefined && (credentials.length > 1 || requiresProModel);
+		const checkUsage = strategy !== undefined && credentials.length > 1;
 		const sessionCredential = this.#getSessionCredential(provider, sessionId);
 		const sessionPreferredIndex = sessionCredential?.type === "oauth" ? sessionCredential.index : undefined;
 		// Skip ranking only when the session already has a working preferred credential — re-ranking
@@ -1691,7 +1403,7 @@ export class AuthStorage {
 		// with the most headroom proactively and fall back intelligently when rate-limited.
 		const sessionPreferredIsAvailable =
 			sessionPreferredIndex !== undefined && !this.#isCredentialBlocked(providerKey, sessionPreferredIndex);
-		const shouldRank = checkUsage && (!sessionPreferredIsAvailable || requiresProModel);
+		const shouldRank = checkUsage && !sessionPreferredIsAvailable;
 		const candidates = shouldRank
 			? await this.#rankOAuthSelections({ providerKey, provider, order, credentials, options, strategy: strategy! })
 			: order
@@ -1699,7 +1411,7 @@ export class AuthStorage {
 					.filter((selection): selection is { credential: OAuthCredential; index: number } => Boolean(selection))
 					.map(selection => ({ selection, usage: null, usageChecked: false }));
 
-		if (sessionPreferredIndex !== undefined && !requiresProModel) {
+		if (sessionPreferredIndex !== undefined) {
 			const sessionPreferredCandidate = candidates.findIndex(
 				candidate =>
 					!this.#isCredentialBlocked(providerKey, candidate.selection.index) &&
@@ -1732,11 +1444,6 @@ export class AuthStorage {
 			}),
 		);
 
-		// Skip the Pro-plan filter when no candidate is confirmed Pro, so users with only
-		// non-Pro accounts can still attempt Spark requests (e.g. trial/grandfathered access).
-		const enforceProRequirement =
-			requiresProModel && candidates.some(candidate => hasOpenAICodexProPlan(candidate.usage));
-
 		const fallback = candidates[0];
 
 		for (const candidate of candidates) {
@@ -1745,7 +1452,6 @@ export class AuthStorage {
 				allowBlocked: false,
 				prefetchedUsage: candidate.usage,
 				usagePrechecked: candidate.usageChecked,
-				enforceProRequirement,
 			});
 			if (apiKey) return apiKey;
 		}
@@ -1756,7 +1462,6 @@ export class AuthStorage {
 				allowBlocked: true,
 				prefetchedUsage: fallback.usage,
 				usagePrechecked: fallback.usageChecked,
-				enforceProRequirement,
 			});
 		}
 
@@ -1802,26 +1507,17 @@ export class AuthStorage {
 			allowBlocked: boolean;
 			prefetchedUsage?: UsageReport | null;
 			usagePrechecked?: boolean;
-			enforceProRequirement?: boolean;
 		},
 	): Promise<string | undefined> {
-		const {
-			checkUsage,
-			allowBlocked,
-			prefetchedUsage = null,
-			usagePrechecked = false,
-			enforceProRequirement,
-		} = usageOptions;
+		const { checkUsage, allowBlocked, prefetchedUsage = null, usagePrechecked = false } = usageOptions;
 		if (!allowBlocked && this.#isCredentialBlocked(providerKey, selection.index)) {
 			return undefined;
 		}
 
-		const requiresProModel = requiresOpenAICodexProModel(provider, options?.modelId);
-		const applyProFilter = enforceProRequirement ?? requiresProModel;
 		let usage: UsageReport | null = null;
 		let usageChecked = false;
 
-		if ((checkUsage && !allowBlocked) || requiresProModel) {
+		if (checkUsage && !allowBlocked) {
 			if (usagePrechecked) {
 				usage = prefetchedUsage;
 				usageChecked = true;
@@ -1831,9 +1527,6 @@ export class AuthStorage {
 					timeoutMs: this.#usageRequestTimeoutMs,
 				});
 				usageChecked = true;
-			}
-			if (applyProFilter && !hasOpenAICodexProPlan(usage)) {
-				return undefined;
 			}
 			if (checkUsage && !allowBlocked && usage && this.#isUsageLimitReached(usage)) {
 				const resetAtMs = this.#getUsageResetAtMs(usage, Date.now());
@@ -1873,7 +1566,7 @@ export class AuthStorage {
 				enterpriseUrl: result.newCredentials.enterpriseUrl ?? selection.credential.enterpriseUrl,
 			};
 			this.#replaceCredentialAt(provider, selection.index, updated);
-			if ((checkUsage && !allowBlocked) || requiresProModel) {
+			if (checkUsage && !allowBlocked) {
 				const sameAccount = selection.credential.accountId === updated.accountId;
 				if (!usageChecked || !sameAccount) {
 					usage = await this.#getUsageReport(provider, updated, {
@@ -1881,9 +1574,6 @@ export class AuthStorage {
 						timeoutMs: this.#usageRequestTimeoutMs,
 					});
 					usageChecked = true;
-				}
-				if (applyProFilter && !hasOpenAICodexProPlan(usage)) {
-					return undefined;
 				}
 				if (checkUsage && !allowBlocked && usage && this.#isUsageLimitReached(usage)) {
 					const resetAtMs = this.#getUsageResetAtMs(usage, Date.now());
@@ -1949,12 +1639,6 @@ export class AuthStorage {
 		if (oauthSelection) {
 			const expiresAt = oauthSelection.credential.expires;
 			if (Number.isFinite(expiresAt) && expiresAt > Date.now()) {
-				if (provider === "github-copilot") {
-					return JSON.stringify({
-						token: oauthSelection.credential.access,
-						enterpriseUrl: oauthSelection.credential.enterpriseUrl,
-					});
-				}
 				return oauthSelection.credential.access;
 			}
 		}
@@ -2089,12 +1773,11 @@ function toStoredAuthCredential(row: AuthRow, credential: AuthCredential): Store
 	return { id: row.id, provider: row.provider, credential, disabledCause: row.disabled_cause };
 }
 
-function resolveProviderCredentialIdentityKey(provider: string, identifiers: string[]): string | null {
+function resolveProviderCredentialIdentityKey(_provider: string, identifiers: string[]): string | null {
 	const emailIdentifier = identifiers.find(identifier => identifier.startsWith("email:"));
-	if ((provider === "openai-codex" || provider === "anthropic") && emailIdentifier) return emailIdentifier;
+	if (emailIdentifier) return emailIdentifier;
 	const accountIdentifier = identifiers.find(identifier => identifier.startsWith("account:"));
 	if (accountIdentifier) return accountIdentifier;
-	if (emailIdentifier) return emailIdentifier;
 	return null;
 }
 

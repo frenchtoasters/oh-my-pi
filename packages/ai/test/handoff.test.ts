@@ -143,7 +143,7 @@ const providerContexts = {
 					arguments: { location: "London" },
 				},
 			],
-			provider: "openai",
+		provider: "litellm",
 			model: "gpt-4o-mini",
 			usage: {
 				input: 110,
@@ -196,7 +196,7 @@ const providerContexts = {
 					arguments: { location: "Sydney" },
 				},
 			],
-			provider: "openai",
+		provider: "litellm",
 			model: "gpt-5-mini",
 			usage: {
 				input: 115,
@@ -441,7 +441,7 @@ describe("Cross-Provider Handoff Tests", () => {
 
 	describe.skipIf(!e2eApiKey("OPENAI_API_KEY"))("OpenAI Completions Provider Handoff", () => {
 		const model: Model<"openai-completions"> = {
-			...getBundledModel("openai", "gpt-4o-mini"),
+		...getBundledModel("litellm", "gpt-5.4-mini"),
 			api: "openai-completions",
 		};
 
@@ -479,7 +479,7 @@ describe("Cross-Provider Handoff Tests", () => {
 	});
 
 	describe.skipIf(!e2eApiKey("OPENAI_API_KEY"))("OpenAI Responses Provider Handoff", () => {
-		const model = getBundledModel("openai", "gpt-5-mini");
+	const model = getBundledModel("litellm", "gpt-5.4");
 
 		it("should handle contexts from all providers", async () => {
 			console.log("\nTesting OpenAI Responses with pre-built contexts:\n");

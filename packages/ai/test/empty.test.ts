@@ -5,14 +5,10 @@ import type { Api, AssistantMessage, Context, Model, OptionsForApi, UserMessage 
 import { e2eApiKey, resolveApiKey } from "./oauth";
 
 // Resolve OAuth tokens at module level (async, runs before tests)
-const oauthTokens = await Promise.all([
+const [anthropicOAuthToken, githubCopilotToken] = await Promise.all([
 	resolveApiKey("anthropic"),
 	resolveApiKey("github-copilot"),
-	resolveApiKey("google-gemini-cli"),
-	resolveApiKey("google-antigravity"),
-	resolveApiKey("openai-codex"),
 ]);
-const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken, openaiCodexToken] = oauthTokens;
 
 async function testEmptyMessage<TApi extends Api>(llm: Model<TApi>, options: OptionsForApi<TApi> = {}) {
 	// Test with completely empty content array
@@ -178,7 +174,7 @@ describe("AI Providers Empty Message Tests", () => {
 	});
 
 	describe.skipIf(!e2eApiKey("OPENAI_API_KEY"))("OpenAI Completions Provider Empty Messages", () => {
-		const llm = getBundledModel("openai", "gpt-4o-mini");
+	const llm = getBundledModel("litellm", "gpt-5.4-mini");
 
 		it(
 			"should handle empty content array",
@@ -214,7 +210,7 @@ describe("AI Providers Empty Message Tests", () => {
 	});
 
 	describe.skipIf(!e2eApiKey("OPENAI_API_KEY"))("OpenAI Responses Provider Empty Messages", () => {
-		const llm = getBundledModel("openai", "gpt-5-mini");
+	const llm = getBundledModel("litellm", "gpt-5.4");
 
 		it(
 			"should handle empty content array",
@@ -575,189 +571,5 @@ describe("AI Providers Empty Message Tests", () => {
 		);
 	});
 
-	describe("Google Gemini CLI Provider Empty Messages", () => {
-		it.skipIf(!geminiCliToken)(
-			"gemini-2.5-flash - should handle empty content array",
-			async () => {
-				const llm = getBundledModel("google-gemini-cli", "gemini-2.5-flash");
-				await testEmptyMessage(llm, { apiKey: geminiCliToken });
-			},
-			{ retry: 3, timeout: 30000 },
-		);
 
-		it.skipIf(!geminiCliToken)(
-			"gemini-2.5-flash - should handle empty string content",
-			async () => {
-				const llm = getBundledModel("google-gemini-cli", "gemini-2.5-flash");
-				await testEmptyStringMessage(llm, { apiKey: geminiCliToken });
-			},
-			{ retry: 3, timeout: 30000 },
-		);
-
-		it.skipIf(!geminiCliToken)(
-			"gemini-2.5-flash - should handle whitespace-only content",
-			async () => {
-				const llm = getBundledModel("google-gemini-cli", "gemini-2.5-flash");
-				await testWhitespaceOnlyMessage(llm, { apiKey: geminiCliToken });
-			},
-			{ retry: 3, timeout: 30000 },
-		);
-
-		it.skipIf(!geminiCliToken)(
-			"gemini-2.5-flash - should handle empty assistant message in conversation",
-			async () => {
-				const llm = getBundledModel("google-gemini-cli", "gemini-2.5-flash");
-				await testEmptyAssistantMessage(llm, { apiKey: geminiCliToken });
-			},
-			{ retry: 3, timeout: 30000 },
-		);
-	});
-
-	describe("Google Antigravity Provider Empty Messages", () => {
-		it.skipIf(!antigravityToken)(
-			"gemini-3-flash - should handle empty content array",
-			async () => {
-				const llm = getBundledModel("google-antigravity", "gemini-3-flash");
-				await testEmptyMessage(llm, { apiKey: antigravityToken });
-			},
-			{ retry: 3, timeout: 30000 },
-		);
-
-		it.skipIf(!antigravityToken)(
-			"gemini-3-flash - should handle empty string content",
-			async () => {
-				const llm = getBundledModel("google-antigravity", "gemini-3-flash");
-				await testEmptyStringMessage(llm, { apiKey: antigravityToken });
-			},
-			{ retry: 3, timeout: 30000 },
-		);
-
-		it.skipIf(!antigravityToken)(
-			"gemini-3-flash - should handle whitespace-only content",
-			async () => {
-				const llm = getBundledModel("google-antigravity", "gemini-3-flash");
-				await testWhitespaceOnlyMessage(llm, { apiKey: antigravityToken });
-			},
-			{ retry: 3, timeout: 30000 },
-		);
-
-		it.skipIf(!antigravityToken)(
-			"gemini-3-flash - should handle empty assistant message in conversation",
-			async () => {
-				const llm = getBundledModel("google-antigravity", "gemini-3-flash");
-				await testEmptyAssistantMessage(llm, { apiKey: antigravityToken });
-			},
-			{ retry: 3, timeout: 30000 },
-		);
-
-		it.skipIf(!antigravityToken)(
-			"claude-sonnet-4-5 - should handle empty content array",
-			async () => {
-				const llm = getBundledModel("google-antigravity", "claude-sonnet-4-5");
-				await testEmptyMessage(llm, { apiKey: antigravityToken });
-			},
-			{ retry: 3, timeout: 30000 },
-		);
-
-		it.skipIf(!antigravityToken)(
-			"claude-sonnet-4-5 - should handle empty string content",
-			async () => {
-				const llm = getBundledModel("google-antigravity", "claude-sonnet-4-5");
-				await testEmptyStringMessage(llm, { apiKey: antigravityToken });
-			},
-			{ retry: 3, timeout: 30000 },
-		);
-
-		it.skipIf(!antigravityToken)(
-			"claude-sonnet-4-5 - should handle whitespace-only content",
-			async () => {
-				const llm = getBundledModel("google-antigravity", "claude-sonnet-4-5");
-				await testWhitespaceOnlyMessage(llm, { apiKey: antigravityToken });
-			},
-			{ retry: 3, timeout: 30000 },
-		);
-
-		it.skipIf(!antigravityToken)(
-			"claude-sonnet-4-5 - should handle empty assistant message in conversation",
-			async () => {
-				const llm = getBundledModel("google-antigravity", "claude-sonnet-4-5");
-				await testEmptyAssistantMessage(llm, { apiKey: antigravityToken });
-			},
-			{ retry: 3, timeout: 30000 },
-		);
-
-		it.skipIf(!antigravityToken)(
-			"gpt-oss-120b-medium - should handle empty content array",
-			async () => {
-				const llm = getBundledModel("google-antigravity", "gpt-oss-120b-medium");
-				await testEmptyMessage(llm, { apiKey: antigravityToken });
-			},
-			{ retry: 3, timeout: 30000 },
-		);
-
-		it.skipIf(!antigravityToken)(
-			"gpt-oss-120b-medium - should handle empty string content",
-			async () => {
-				const llm = getBundledModel("google-antigravity", "gpt-oss-120b-medium");
-				await testEmptyStringMessage(llm, { apiKey: antigravityToken });
-			},
-			{ retry: 3, timeout: 30000 },
-		);
-
-		it.skipIf(!antigravityToken)(
-			"gpt-oss-120b-medium - should handle whitespace-only content",
-			async () => {
-				const llm = getBundledModel("google-antigravity", "gpt-oss-120b-medium");
-				await testWhitespaceOnlyMessage(llm, { apiKey: antigravityToken });
-			},
-			{ retry: 3, timeout: 30000 },
-		);
-
-		it.skipIf(!antigravityToken)(
-			"gpt-oss-120b-medium - should handle empty assistant message in conversation",
-			async () => {
-				const llm = getBundledModel("google-antigravity", "gpt-oss-120b-medium");
-				await testEmptyAssistantMessage(llm, { apiKey: antigravityToken });
-			},
-			{ retry: 3, timeout: 30000 },
-		);
-	});
-
-	describe("OpenAI Codex Provider Empty Messages", () => {
-		it.skipIf(!openaiCodexToken)(
-			"gpt-5.2-codex - should handle empty content array",
-			async () => {
-				const llm = getBundledModel("openai-codex", "gpt-5.2-codex");
-				await testEmptyMessage(llm, { apiKey: openaiCodexToken });
-			},
-			{ retry: 3, timeout: 30000 },
-		);
-
-		it.skipIf(!openaiCodexToken)(
-			"gpt-5.2-codex - should handle empty string content",
-			async () => {
-				const llm = getBundledModel("openai-codex", "gpt-5.2-codex");
-				await testEmptyStringMessage(llm, { apiKey: openaiCodexToken });
-			},
-			{ retry: 3, timeout: 30000 },
-		);
-
-		it.skipIf(!openaiCodexToken)(
-			"gpt-5.2-codex - should handle whitespace-only content",
-			async () => {
-				const llm = getBundledModel("openai-codex", "gpt-5.2-codex");
-				await testWhitespaceOnlyMessage(llm, { apiKey: openaiCodexToken });
-			},
-			{ retry: 3, timeout: 30000 },
-		);
-
-		it.skipIf(!openaiCodexToken)(
-			"gpt-5.2-codex - should handle empty assistant message in conversation",
-			async () => {
-				const llm = getBundledModel("openai-codex", "gpt-5.2-codex");
-				await testEmptyAssistantMessage(llm, { apiKey: openaiCodexToken });
-			},
-			{ retry: 3, timeout: 30000 },
-		);
-	});
 });

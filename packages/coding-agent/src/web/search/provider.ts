@@ -62,11 +62,6 @@ const PROVIDER_META: Record<SearchProviderId, ProviderMeta> = {
 		label: "Gemini",
 		load: async () => new (await import("./providers/gemini")).GeminiProvider(),
 	},
-	codex: {
-		id: "codex",
-		label: "Codex",
-		load: async () => new (await import("./providers/codex")).CodexProvider(),
-	},
 	tavily: {
 		id: "tavily",
 		label: "Tavily",
@@ -125,7 +120,6 @@ export const SEARCH_PROVIDER_ORDER: SearchProviderId[] = [
 	"kimi",
 	"anthropic",
 	"gemini",
-	"codex",
 	"zai",
 	"exa",
 	"parallel",

@@ -31,8 +31,6 @@ const compat: Required<OpenAICompat> = {
 	requiresReasoningContentForToolCalls: false,
 	allowsSyntheticReasoningContentForToolCalls: true,
 	requiresAssistantContentForToolCalls: false,
-	openRouterRouting: {},
-	vercelGatewayRouting: {},
 	extraBody: {},
 	supportsStrictMode: true,
 	toolStrictMode: "none",

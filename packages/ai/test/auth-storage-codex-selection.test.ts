@@ -34,10 +34,10 @@ function createLimit(args: {
 	const clamped = Math.min(Math.max(args.usedFraction, 0), 1);
 	const used = clamped * 100;
 	return {
-		id: `openai-codex:${args.key}`,
+		id: `litellm:${args.key}`,
 		label: args.windowLabel,
 		scope: {
-			provider: "openai-codex",
+			provider: "litellm",
 			windowId: args.windowId,
 			shared: true,
 		},
@@ -69,7 +69,7 @@ function createCodexUsageReport(args: {
 	const primaryWindow = args.primaryWindow ?? { windowId: "1h", windowLabel: "1 Hour", durationMs: HOUR_MS };
 	const secondaryWindow = args.secondaryWindow ?? { windowId: "7d", windowLabel: "7 Day", durationMs: WEEK_MS };
 	return {
-		provider: "openai-codex",
+		provider: "litellm",
 		fetchedAt: Date.now(),
 		limits: [
 			createLimit({
@@ -110,7 +110,7 @@ describe("AuthStorage codex oauth ranking", () => {
 	const usageByAccount = new Map<string, UsageReport>();
 
 	const usageProvider: UsageProvider = {
-		id: "openai-codex",
+		id: "litellm",
 		async fetchUsage(params) {
 			const accountId = params.credential.accountId;
 			if (!accountId) return null;
@@ -122,11 +122,11 @@ describe("AuthStorage codex oauth ranking", () => {
 		tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "pi-ai-auth-codex-selection-"));
 		store = await AuthCredentialStore.open(path.join(tempDir, "agent.db"));
 		authStorage = new AuthStorage(store, {
-			usageProviderResolver: provider => (provider === "openai-codex" ? usageProvider : undefined),
+			usageProviderResolver: provider => (provider === "litellm" ? usageProvider : undefined),
 		});
 		usageByAccount.clear();
 		vi.spyOn(oauthUtils, "getOAuthApiKey").mockImplementation(async (_provider, credentials) => {
-			const credential = credentials["openai-codex"] as OAuthCredentials | undefined;
+			const credential = credentials["litellm"] as OAuthCredentials | undefined;
 			if (!credential?.accountId) return null;
 			return {
 				apiKey: `api-${credential.accountId}`,
@@ -149,7 +149,7 @@ describe("AuthStorage codex oauth ranking", () => {
 	test("prefers near-reset weekly account over lower-used far-reset account", async () => {
 		if (!authStorage) throw new Error("test setup failed");
 
-		await authStorage.set("openai-codex", [
+		await authStorage.set("litellm", [
 			{ type: "oauth", ...createCredential("acct-near", "near@example.com") },
 			{ type: "oauth", ...createCredential("acct-far", "far@example.com") },
 		]);
@@ -171,14 +171,14 @@ describe("AuthStorage codex oauth ranking", () => {
 			}),
 		);
 
-		const apiKey = await authStorage.getApiKey("openai-codex", "session-weekly-reset");
+		const apiKey = await authStorage.getApiKey("litellm", "session-weekly-reset");
 		expect(apiKey).toBe("api-acct-near");
 	});
 
 	test("prioritizes fresh 5h ticker account at 0% usage", async () => {
 		if (!authStorage) throw new Error("test setup failed");
 
-		await authStorage.set("openai-codex", [
+		await authStorage.set("litellm", [
 			{ type: "oauth", ...createCredential("acct-zero", "zero@example.com") },
 			{ type: "oauth", ...createCredential("acct-progress", "progress@example.com") },
 		]);
@@ -208,13 +208,13 @@ describe("AuthStorage codex oauth ranking", () => {
 			}),
 		);
 
-		const apiKey = await authStorage.getApiKey("openai-codex", "session-five-hour-start");
+		const apiKey = await authStorage.getApiKey("litellm", "session-five-hour-start");
 		expect(apiKey).toBe("api-acct-zero");
 	});
 	test("skips exhausted weekly account even when reset is near", async () => {
 		if (!authStorage) throw new Error("test setup failed");
 
-		await authStorage.set("openai-codex", [
+		await authStorage.set("litellm", [
 			{ type: "oauth", ...createCredential("acct-exhausted", "exhausted@example.com") },
 			{ type: "oauth", ...createCredential("acct-healthy", "healthy@example.com") },
 		]);
@@ -236,14 +236,14 @@ describe("AuthStorage codex oauth ranking", () => {
 			}),
 		);
 
-		const apiKey = await authStorage.getApiKey("openai-codex", "session-exhausted");
+		const apiKey = await authStorage.getApiKey("litellm", "session-exhausted");
 		expect(apiKey).toBe("api-acct-healthy");
 	});
 
 	test("falls back to earliest-unblocking account when all exhausted", async () => {
 		if (!authStorage) throw new Error("test setup failed");
 
-		await authStorage.set("openai-codex", [
+		await authStorage.set("litellm", [
 			{ type: "oauth", ...createCredential("acct-soon", "soon@example.com") },
 			{ type: "oauth", ...createCredential("acct-later", "later@example.com") },
 		]);
@@ -265,14 +265,14 @@ describe("AuthStorage codex oauth ranking", () => {
 			}),
 		);
 
-		const apiKey = await authStorage.getApiKey("openai-codex", "session-all-exhausted");
+		const apiKey = await authStorage.getApiKey("litellm", "session-all-exhausted");
 		expect(apiKey).toBe("api-acct-soon");
 	});
 
 	test("works with single credential (no ranking)", async () => {
 		if (!authStorage) throw new Error("test setup failed");
 
-		await authStorage.set("openai-codex", [{ type: "oauth", ...createCredential("acct-solo", "solo@example.com") }]);
+		await authStorage.set("litellm", [{ type: "oauth", ...createCredential("acct-solo", "solo@example.com") }]);
 
 		usageByAccount.set(
 			"acct-solo",
@@ -283,14 +283,14 @@ describe("AuthStorage codex oauth ranking", () => {
 			}),
 		);
 
-		const apiKey = await authStorage.getApiKey("openai-codex", "session-single");
+		const apiKey = await authStorage.getApiKey("litellm", "session-single");
 		expect(apiKey).toBe("api-acct-solo");
 	});
 
 	test("prefers Pro accounts for codex spark models over Plus accounts", async () => {
 		if (!authStorage) throw new Error("test setup failed");
 
-		await authStorage.set("openai-codex", [
+		await authStorage.set("litellm", [
 			{ type: "oauth", ...createCredential("acct-plus", "plus@example.com") },
 			{ type: "oauth", ...createCredential("acct-pro", "pro@example.com") },
 		]);
@@ -311,7 +311,7 @@ describe("AuthStorage codex oauth ranking", () => {
 		proReport.metadata = { ...proReport.metadata, planType: "pro" };
 		usageByAccount.set("acct-pro", proReport);
 
-		const apiKey = await authStorage.getApiKey("openai-codex", "session-spark-prefers-pro", {
+		const apiKey = await authStorage.getApiKey("litellm", "session-spark-prefers-pro", {
 			modelId: "gpt-5.3-codex-spark",
 		});
 		expect(apiKey).toBe("api-acct-pro");
@@ -320,7 +320,7 @@ describe("AuthStorage codex oauth ranking", () => {
 	test("routes codex spark to a single Plus account when no Pro is connected", async () => {
 		if (!authStorage) throw new Error("test setup failed");
 
-		await authStorage.set("openai-codex", [{ type: "oauth", ...createCredential("acct-plus", "plus@example.com") }]);
+		await authStorage.set("litellm", [{ type: "oauth", ...createCredential("acct-plus", "plus@example.com") }]);
 
 		const plusReport = createCodexUsageReport({
 			accountId: "acct-plus",
@@ -330,7 +330,7 @@ describe("AuthStorage codex oauth ranking", () => {
 		plusReport.metadata = { ...plusReport.metadata, planType: "plus" };
 		usageByAccount.set("acct-plus", plusReport);
 
-		const apiKey = await authStorage.getApiKey("openai-codex", "session-spark-single-plus", {
+		const apiKey = await authStorage.getApiKey("litellm", "session-spark-single-plus", {
 			modelId: "gpt-5.3-codex-spark",
 		});
 		expect(apiKey).toBe("api-acct-plus");
@@ -339,7 +339,7 @@ describe("AuthStorage codex oauth ranking", () => {
 	test("falls back to Plus accounts for codex spark models when no Pro is connected", async () => {
 		if (!authStorage) throw new Error("test setup failed");
 
-		await authStorage.set("openai-codex", [
+		await authStorage.set("litellm", [
 			{ type: "oauth", ...createCredential("acct-plus-a", "plus-a@example.com") },
 			{ type: "oauth", ...createCredential("acct-plus-b", "plus-b@example.com") },
 		]);
@@ -354,7 +354,7 @@ describe("AuthStorage codex oauth ranking", () => {
 			usageByAccount.set(accountId, plusReport);
 		}
 
-		const apiKey = await authStorage.getApiKey("openai-codex", "session-spark-all-plus", {
+		const apiKey = await authStorage.getApiKey("litellm", "session-spark-all-plus", {
 			modelId: "gpt-5.3-codex-spark",
 		});
 		expect(apiKey).toBeDefined();
@@ -366,9 +366,9 @@ describe("AuthStorage codex oauth ranking", () => {
 
 		const slowAuthStorage = new AuthStorage(store, {
 			usageProviderResolver: provider =>
-				provider === "openai-codex"
+				provider === "litellm"
 					? ({
-							id: "openai-codex",
+							id: "litellm",
 							async fetchUsage(params) {
 								const { promise, resolve } = Promise.withResolvers<UsageReport | null>();
 								params.signal?.addEventListener("abort", () => resolve(null), { once: true });
@@ -379,13 +379,13 @@ describe("AuthStorage codex oauth ranking", () => {
 			usageRequestTimeoutMs: 10,
 		});
 
-		await slowAuthStorage.set("openai-codex", [
+		await slowAuthStorage.set("litellm", [
 			{ type: "oauth", ...createCredential("acct-first", "first@example.com") },
 			{ type: "oauth", ...createCredential("acct-second", "second@example.com") },
 		]);
 
 		const startedAt = Date.now();
-		const apiKey = await slowAuthStorage.getApiKey("openai-codex");
+		const apiKey = await slowAuthStorage.getApiKey("litellm");
 		const elapsedMs = Date.now() - startedAt;
 
 		expect(apiKey).toBe("api-acct-first");
@@ -395,7 +395,7 @@ describe("AuthStorage codex oauth ranking", () => {
 	test("sorts 3 accounts by weekly drain rate", async () => {
 		if (!authStorage) throw new Error("test setup failed");
 
-		await authStorage.set("openai-codex", [
+		await authStorage.set("litellm", [
 			{ type: "oauth", ...createCredential("acct-fast", "fast@example.com") },
 			{ type: "oauth", ...createCredential("acct-medium", "medium@example.com") },
 			{ type: "oauth", ...createCredential("acct-slow", "slow@example.com") },
@@ -426,14 +426,14 @@ describe("AuthStorage codex oauth ranking", () => {
 			}),
 		);
 
-		const apiKey = await authStorage.getApiKey("openai-codex", "session-three-accounts");
+		const apiKey = await authStorage.getApiKey("litellm", "session-three-accounts");
 		expect(apiKey).toBe("api-acct-slow");
 	});
 
 	test("handles usage fetch failure gracefully (null report)", async () => {
 		if (!authStorage) throw new Error("test setup failed");
 
-		await authStorage.set("openai-codex", [
+		await authStorage.set("litellm", [
 			{ type: "oauth", ...createCredential("acct-null", "null@example.com") },
 			{ type: "oauth", ...createCredential("acct-known", "known@example.com") },
 		]);
@@ -448,19 +448,19 @@ describe("AuthStorage codex oauth ranking", () => {
 			}),
 		);
 
-		const apiKey = await authStorage.getApiKey("openai-codex", "session-null-usage");
+		const apiKey = await authStorage.getApiKey("litellm", "session-null-usage");
 		expect(apiKey).toBe("api-acct-known");
 	});
 	test("refreshes expired oauth candidates in parallel before selection", async () => {
 		if (!authStorage) throw new Error("test setup failed");
 
 		vi.spyOn(oauthUtils, "getOAuthApiKey").mockImplementation(async (_provider, credentials) => {
-			const credential = credentials["openai-codex"] as OAuthCredentials | undefined;
+			const credential = credentials["litellm"] as OAuthCredentials | undefined;
 			if (!credential?.accountId) return null;
 
 			let nextCredential = credential;
 			if (Date.now() >= credential.expires) {
-				nextCredential = await oauthUtils.refreshOAuthToken("openai-codex", credential);
+				nextCredential = await oauthUtils.refreshOAuthToken("litellm", credential);
 			}
 
 			if (nextCredential.accountId === "acct-first" || nextCredential.accountId === "acct-second") {
@@ -491,14 +491,14 @@ describe("AuthStorage codex oauth ranking", () => {
 		});
 
 		const expiredAt = Date.now() - HOUR_MS;
-		await authStorage.set("openai-codex", [
+		await authStorage.set("litellm", [
 			{ type: "oauth", ...createCredential("acct-first", "first@example.com"), expires: expiredAt },
 			{ type: "oauth", ...createCredential("acct-second", "second@example.com"), expires: expiredAt },
 			{ type: "oauth", ...createCredential("acct-third", "third@example.com"), expires: expiredAt },
 		]);
 
 		const startedAt = Date.now();
-		const apiKey = await authStorage.getApiKey("openai-codex");
+		const apiKey = await authStorage.getApiKey("litellm");
 		const elapsedMs = Date.now() - startedAt;
 
 		expect(apiKey).toBe("refreshed-acct-third");

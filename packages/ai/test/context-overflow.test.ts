@@ -22,13 +22,9 @@ import { $which } from "@oh-my-pi/pi-utils";
 import { e2eApiKey, resolveApiKey } from "./oauth";
 
 // Resolve OAuth tokens at module level (async, runs before tests)
-const oauthTokens = await Promise.all([
+const [githubCopilotToken] = await Promise.all([
 	resolveApiKey("github-copilot"),
-	resolveApiKey("google-gemini-cli"),
-	resolveApiKey("google-antigravity"),
-	resolveApiKey("openai-codex"),
 ]);
-const [githubCopilotToken, geminiCliToken, antigravityToken, openaiCodexToken] = oauthTokens;
 
 // Lorem ipsum paragraph for realistic token estimation
 const LOREM_IPSUM = `Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. `;
@@ -166,7 +162,7 @@ describe("Context overflow error handling", () => {
 
 	describe.skipIf(!e2eApiKey("OPENAI_API_KEY"))("OpenAI Completions", () => {
 		it("gpt-4o-mini - should detect overflow via isContextOverflow", async () => {
-			const model = { ...getBundledModel("openai", "gpt-4o-mini"), api: "openai-completions" as const };
+			const model = { ...getBundledModel("litellm", "gpt-5.4-mini"), api: "openai-completions" as const };
 			const result = await testContextOverflow(model, Bun.env.OPENAI_API_KEY!);
 			logResult(result);
 
@@ -178,7 +174,7 @@ describe("Context overflow error handling", () => {
 
 	describe.skipIf(!e2eApiKey("OPENAI_API_KEY"))("OpenAI Responses", () => {
 		it("gpt-4o - should detect overflow via isContextOverflow", async () => {
-			const model = getBundledModel("openai", "gpt-4o");
+			const model = getBundledModel("litellm", "gpt-5.4");
 			const result = await testContextOverflow(model, Bun.env.OPENAI_API_KEY!);
 			logResult(result);
 
@@ -210,79 +206,8 @@ describe("Context overflow error handling", () => {
 	// Uses same API as Google, expects same error pattern
 	// =============================================================================
 
-	describe("Google Gemini CLI (OAuth)", () => {
-		it.skipIf(!geminiCliToken)(
-			"gemini-2.5-flash - should detect overflow via isContextOverflow",
-			async () => {
-				const model = getBundledModel("google-gemini-cli", "gemini-2.5-flash");
-				const result = await testContextOverflow(model, geminiCliToken!);
-				logResult(result);
 
-				expect(result.stopReason).toBe("error");
-				expect(result.errorMessage).toMatch(/input token count.*exceeds the maximum/i);
-				expect(isContextOverflow(result.response, model.contextWindow)).toBe(true);
-			},
-			120000,
-		);
-	});
 
-	// =============================================================================
-	// Google Antigravity (OAuth)
-	// Tests both Gemini and Anthropic models via Antigravity
-	// =============================================================================
-
-	describe("Google Antigravity (OAuth)", () => {
-		// Gemini model
-		it.skipIf(!antigravityToken)(
-			"gemini-3-flash - should detect overflow via isContextOverflow",
-			async () => {
-				const model = getBundledModel("google-antigravity", "gemini-3-flash");
-				const result = await testContextOverflow(model, antigravityToken!);
-				logResult(result);
-
-				expect(result.stopReason).toBe("error");
-				expect(result.errorMessage).toMatch(/input token count.*exceeds the maximum/i);
-				expect(isContextOverflow(result.response, model.contextWindow)).toBe(true);
-			},
-			120000,
-		);
-
-		// Anthropic model via Antigravity
-		it.skipIf(!antigravityToken)(
-			"claude-sonnet-4-5 - should detect overflow via isContextOverflow",
-			async () => {
-				const model = getBundledModel("google-antigravity", "claude-sonnet-4-5");
-				const result = await testContextOverflow(model, antigravityToken!);
-				logResult(result);
-
-				expect(result.stopReason).toBe("error");
-				// Anthropic models return "prompt is too long" pattern
-				expect(result.errorMessage).toMatch(/prompt is too long/i);
-				expect(isContextOverflow(result.response, model.contextWindow)).toBe(true);
-			},
-			120000,
-		);
-	});
-
-	// =============================================================================
-	// OpenAI Codex (OAuth)
-	// Uses ChatGPT Plus/Pro subscription via OAuth
-	// =============================================================================
-
-	describe("OpenAI Codex (OAuth)", () => {
-		it.skipIf(!openaiCodexToken)(
-			"gpt-5.2-codex - should detect overflow via isContextOverflow",
-			async () => {
-				const model = getBundledModel("openai-codex", "gpt-5.2-codex");
-				const result = await testContextOverflow(model, openaiCodexToken!);
-				logResult(result);
-
-				expect(result.stopReason).toBe("error");
-				expect(isContextOverflow(result.response, model.contextWindow)).toBe(true);
-			},
-			120000,
-		);
-	});
 
 	// =============================================================================
 	// xAI

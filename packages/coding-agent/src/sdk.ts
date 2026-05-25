@@ -7,10 +7,6 @@ import {
 	type ThinkingLevel,
 } from "@oh-my-pi/pi-agent-core";
 import type { Message, Model, SimpleStreamOptions } from "@oh-my-pi/pi-ai";
-import {
-	getOpenAICodexTransportDetails,
-	prewarmOpenAICodexResponses,
-} from "@oh-my-pi/pi-ai/providers/openai-codex-responses";
 import type { Component } from "@oh-my-pi/pi-tui";
 import {
 	$env,
@@ -32,7 +28,6 @@ import { ModelRegistry } from "./config/model-registry";
 import { formatModelString, parseModelPattern, parseModelString, resolveModelRoleValue } from "./config/model-resolver";
 import { loadPromptTemplates as loadPromptTemplatesInternal, type PromptTemplate } from "./config/prompt-templates";
 import { Settings, type SkillsSettings } from "./config/settings";
-import { CursorExecHandlers } from "./cursor";
 import "./discovery";
 import { resolveConfigValue } from "./config/resolve-config-value";
 import { initializeWithSettings } from "./discovery";
@@ -1354,9 +1349,6 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 				toolRegistry.set(tool.name, new ExtensionToolWrapper(tool, extensionRunner));
 			}
 		}
-		if (model?.provider === "cursor") {
-			toolRegistry.delete("edit");
-		}
 
 		const hasDeferrableTools = Array.from(toolRegistry.values()).some(tool => tool.deferrable === true);
 		if (!hasDeferrableTools) {
@@ -1367,14 +1359,6 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 				toolRegistry.set(resolveTool.name, wrapToolWithMetaNotice(resolveTool));
 			}
 		}
-
-		let cursorEventEmitter: ((event: AgentEvent) => void) | undefined;
-		const cursorExecHandlers = new CursorExecHandlers({
-			cwd,
-			tools: toolRegistry,
-			getToolContext: () => toolContextStore.getContext(),
-			emitEvent: event => cursorEventEmitter?.(event),
-		});
 
 		const repeatToolDescriptions = settings.get("repeatToolDescriptions");
 		const eagerTasks = settings.get("task.eager");
@@ -1633,9 +1617,6 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			.map(name => toolRegistry.get(name))
 			.filter((tool): tool is AgentTool => tool !== undefined);
 
-		const openaiWebsocketSetting = settings.get("providers.openaiWebsockets") ?? "off";
-		const preferOpenAICodexWebsockets =
-			openaiWebsocketSetting === "on" ? true : openaiWebsocketSetting === "off" ? false : undefined;
 		const serviceTierSetting = settings.get("serviceTier");
 
 		const initialServiceTier = hasServiceTierEntry
@@ -1668,7 +1649,6 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			repetitionPenalty: settings.get("repetitionPenalty") >= 0 ? settings.get("repetitionPenalty") : undefined,
 			serviceTier: initialServiceTier,
 			kimiApiFormat: settings.get("providers.kimiApiFormat") ?? "anthropic",
-			preferWebsockets: preferOpenAICodexWebsockets,
 			getToolContext: tc => toolContextStore.getContext(tc),
 			getApiKey: async provider => {
 				// Use the provider-facing session id for sticky credential selection so cache keys
@@ -1679,7 +1659,6 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 				}
 				return key;
 			},
-			cursorExecHandlers,
 			transformToolCallArguments: (args, _toolName) => {
 				let result = args;
 				const maxTimeout = settings.get("tools.maxTimeout");
@@ -1694,8 +1673,6 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			intentTracing: !!intentField,
 			getToolChoice: () => session?.nextToolChoice(),
 		});
-
-		cursorEventEmitter = event => agent.emitExternalEvent(event);
 
 		// Restore messages if session has existing data
 		if (hasExistingSession) {
@@ -1781,36 +1758,6 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			};
 		}
 
-		if (model?.api === "openai-codex-responses") {
-			const codexModel = model;
-			const codexTransport = getOpenAICodexTransportDetails(codexModel, {
-				sessionId: providerSessionId,
-				baseUrl: codexModel.baseUrl,
-				preferWebsockets: preferOpenAICodexWebsockets,
-				providerSessionState: session.providerSessionState,
-			});
-			if (codexTransport.websocketPreferred) {
-				void (async () => {
-					try {
-						const codexPrewarmApiKey = await modelRegistry.getApiKey(codexModel, providerSessionId);
-						if (!codexPrewarmApiKey) return;
-						await logger.time("prewarmOpenAICodexResponses", prewarmOpenAICodexResponses, codexModel, {
-							apiKey: codexPrewarmApiKey,
-							sessionId: providerSessionId,
-							preferWebsockets: preferOpenAICodexWebsockets,
-							providerSessionState: session.providerSessionState,
-						});
-					} catch (error) {
-						const errorMessage = error instanceof Error ? error.message : String(error);
-						logger.debug("Codex websocket prewarm failed", {
-							error: errorMessage,
-							provider: codexModel.provider,
-							model: codexModel.id,
-						});
-					}
-				})();
-			}
-		}
 
 		// Start LSP warmup in the background so startup does not block on language server initialization.
 		let lspServers: CreateAgentSessionResult["lspServers"];

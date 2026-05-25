@@ -31,7 +31,6 @@ describe("SessionManager.saveCustomEntry", () => {
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 			},
 			stopReason: "stop",
-			providerPayload: { type: "openaiResponsesHistory", provider: "openai", items: nativeHistory },
 			timestamp: 2,
 		});
 
@@ -57,10 +56,6 @@ describe("SessionManager.saveCustomEntry", () => {
 		const ctx = session.buildSessionContext();
 		expect(ctx.messages).toHaveLength(2); // only message entries
 		if (ctx.messages[1]?.role !== "assistant") throw new Error("Expected assistant message");
-		expect(ctx.messages[1].providerPayload).toEqual({
-			type: "openaiResponsesHistory",
-			provider: "openai",
-			items: nativeHistory,
-		});
+		expect(ctx.messages[1].role).toBe("assistant");
 	});
 });

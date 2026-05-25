@@ -20,7 +20,6 @@ import type {
 import { normalizeSystemPrompts } from "../utils";
 import { AssistantMessageEventStream } from "../utils/event-stream";
 import { finalizeErrorMessage, type RawHttpRequestDump } from "../utils/http-inspector";
-import type { GoogleThinkingLevel } from "./google-gemini-cli";
 import {
 	convertMessages,
 	convertTools,
@@ -29,6 +28,8 @@ import {
 	mapToolChoice,
 	retainThoughtSignature,
 } from "./google-shared";
+
+type GoogleThinkingLevel = "THINKING_LEVEL_UNSPECIFIED" | "MINIMAL" | "LOW" | "MEDIUM" | "HIGH";
 
 export interface GoogleOptions extends StreamOptions {
 	toolChoice?: "auto" | "none" | "any";

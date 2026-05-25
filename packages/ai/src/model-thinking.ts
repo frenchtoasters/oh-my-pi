@@ -42,12 +42,6 @@ type GeminiKind = "pro" | "flash";
 type AnthropicKind = "opus" | "sonnet";
 type OpenAIVariant = "base" | "codex" | "codex-max" | "codex-mini" | "codex-spark" | "mini" | "max" | "nano";
 
-const CODEX_GPT_5_4_PRIORITY_BY_VARIANT: Partial<Record<OpenAIVariant, number>> = {
-	base: 0,
-	mini: 1,
-	nano: 2,
-};
-
 const COPILOT_GENERATED_LIMITS: Record<string, { contextWindow: number; maxTokens: number }> = {
 	"claude-opus-4.6": { contextWindow: 168000, maxTokens: 32000 },
 	"gpt-5.2": { contextWindow: 272000, maxTokens: 128000 },
@@ -337,29 +331,12 @@ function applyAnthropicCatalogPolicy(model: ApiModel<Api>, parsedModel: Anthropi
 		model.cost.cacheRead = 0.5;
 		model.cost.cacheWrite = 6.25;
 	}
-
-	// Bedrock Opus 4.6: upstream metadata is stale for cache pricing and context.
-	if (model.provider === "amazon-bedrock" && parsedModel.kind === "opus" && semverEqual(parsedModel.version, "4.6")) {
-		model.cost.cacheRead = 0.5;
-		model.cost.cacheWrite = 6.25;
-		model.contextWindow = 1000000;
-		model.maxTokens = 128000;
-	}
 }
 
 function inferGeneratedApplyPatchToolType(
-	model: ApiModel<Api>,
-	parsedModel: ParsedModel,
+	_model: ApiModel<Api>,
+	_parsedModel: ParsedModel,
 ): ApiModel<Api>["applyPatchToolType"] {
-	if (parsedModel.family !== "openai" || parsedModel.version.major !== 5) {
-		return undefined;
-	}
-	if (model.provider === "openai" && model.api === "openai-responses") {
-		return "freeform";
-	}
-	if (model.provider === "openai-codex" && model.api === "openai-codex-responses") {
-		return "freeform";
-	}
 	return undefined;
 }
 
@@ -368,19 +345,6 @@ function applyOpenAICatalogPolicy(model: ApiModel<Api>, parsedModel: OpenAIModel
 	if (parsedModel.variant.startsWith("codex") && parsedModel.variant !== "codex-spark") {
 		model.contextWindow = 272000;
 		return;
-	}
-	// GPT-5.4 mini/nano use plain OpenAI IDs on the Codex transport, but Codex still
-	// enforces the lower prompt budget for these variants. Codex discovery can also
-	// report inconsistent priorities for the GPT-5.4 family, so normalize by parsed
-	// variant instead of special-casing raw model ids.
-	if (model.api === "openai-codex-responses" && semverEqual(parsedModel.version, "5.4")) {
-		const normalizedPriority = CODEX_GPT_5_4_PRIORITY_BY_VARIANT[parsedModel.variant];
-		if (normalizedPriority !== undefined) {
-			model.priority = normalizedPriority;
-		}
-		if (parsedModel.variant === "mini" || parsedModel.variant === "nano") {
-			model.contextWindow = 272000;
-		}
 	}
 }
 
@@ -459,10 +423,7 @@ function inferAnthropicSupportedEfforts<TApi extends Api>(
 	parsedModel: AnthropicModel,
 	model: ApiModel<TApi>,
 ): readonly Effort[] {
-	if (
-		(model.api === "anthropic-messages" || model.api === "bedrock-converse-stream") &&
-		semverGte(parsedModel.version, "4.6")
-	) {
+	if (model.api === "anthropic-messages" && semverGte(parsedModel.version, "4.6")) {
 		return parsedModel.kind === "opus" ? DEFAULT_REASONING_EFFORTS_WITH_XHIGH : DEFAULT_REASONING_EFFORTS;
 	}
 	return inferFallbackEfforts(model);
@@ -475,19 +436,12 @@ function inferFallbackEfforts<TApi extends Api>(model: ApiModel<TApi>): readonly
 	if (model.name.includes("deepseek-v4")) {
 		return DEFAULT_REASONING_EFFORTS_WITH_XHIGH;
 	}
-	if (model.api === "bedrock-converse-stream") {
-		return DEFAULT_REASONING_EFFORTS;
-	}
 	if (model.api === "openai-completions") {
 		const compat = resolveOpenAICompat(model as ApiModel<"openai-completions">);
 		if (compat.thinkingFormat === "openai" && compat.supportsReasoningEffort) {
 			return DEFAULT_REASONING_EFFORTS_WITH_XHIGH;
 		}
 		return DEFAULT_REASONING_EFFORTS;
-	}
-	// OpenAI Responses APIs encode discrete effort levels, including xhigh.
-	if (model.api === "openai-responses" || model.api === "openai-codex-responses") {
-		return DEFAULT_REASONING_EFFORTS_WITH_XHIGH;
 	}
 	return DEFAULT_REASONING_EFFORTS;
 }
@@ -498,8 +452,6 @@ function inferThinkingControlMode<TApi extends Api>(
 ): ThinkingConfig["mode"] {
 	switch (model.api) {
 		case "google-generative-ai":
-		case "google-gemini-cli":
-		case "google-vertex":
 			return parsedModel.family === "gemini" &&
 				semverGte(parsedModel.version, "3.0") &&
 				parsedModel.version.major === 3
@@ -509,17 +461,6 @@ function inferThinkingControlMode<TApi extends Api>(
 		case "anthropic-messages":
 			if (parsedModel.family === "anthropic") {
 				if (semverGte(parsedModel.version, "4.6")) {
-					return "anthropic-adaptive";
-				}
-				if (semverGte(parsedModel.version, "4.5")) {
-					return "anthropic-budget-effort";
-				}
-			}
-			return "budget";
-
-		case "bedrock-converse-stream":
-			if (parsedModel.family === "anthropic") {
-				if (semverGte(parsedModel.version, "4.6") && parsedModel.kind === "opus") {
 					return "anthropic-adaptive";
 				}
 				if (semverGte(parsedModel.version, "4.5")) {
