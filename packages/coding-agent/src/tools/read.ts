@@ -9,6 +9,7 @@ import { Text } from "@oh-my-pi/pi-tui";
 import { getRemoteDir, prompt, readImageMetadata, untilAborted } from "@oh-my-pi/pi-utils";
 import { type Static, Type } from "@sinclair/typebox";
 import { formatHashLine, formatHashLines, formatLineHash, HL_BODY_SEP } from "../edit/line-hash";
+import { getFileReadCache } from "../edit/file-read-cache";
 import type { RenderResultOptions } from "../extensibility/custom-tools/types";
 import { parseInternalUrl } from "../internal-urls/parse";
 import type { InternalUrl } from "../internal-urls/types";
@@ -1364,6 +1365,9 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 
 				const selectedContent = collectedLines.join("\n");
 				const userLimitedLines = collectedLines.length;
+
+				// Record what we just rendered to the model in the stale-anchor recovery cache.
+				getFileReadCache(this.session).recordContiguous(absolutePath, startLineDisplay, collectedLines);
 
 				const totalSelectedLines = totalFileLines - startLine;
 				const totalSelectedBytes = collectedBytes;

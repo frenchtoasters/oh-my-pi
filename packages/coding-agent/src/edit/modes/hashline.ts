@@ -14,7 +14,7 @@
  *   5.  Read-output prefix stripping  (stripNewLinePrefixes, hashlineParseText)
  *   6.  Hashline streaming            (streamHashLinesFromUtf8)
  *   7.  Anchor parsing & validation   (parseTag, parseLid, parseRange, ...)
- *   8.  Mismatch error & rebase       (HashlineMismatchError, tryRebaseAnchor)
+ *   8.  Mismatch error                (HashlineMismatchError)
  *   9.  Compact diff preview          (buildCompactHashlineDiffPreview)
  *  10.  Edit DSL parsing              (parseHashline, parseHashlineWithWarnings)
  *  11.  Edit application              (applyHashlineEdits)
@@ -31,6 +31,7 @@ import * as path from "node:path";
 import type { AgentToolResult } from "@oh-my-pi/pi-agent-core";
 import { isEnoent } from "@oh-my-pi/pi-utils";
 import { type Static, Type } from "@sinclair/typebox";
+import * as Diff from "diff";
 import type { WritethroughCallback, WritethroughDeferredHandle } from "../../lsp";
 import type { ToolSession } from "../../tools";
 import { assertEditableFileContent } from "../../tools/auto-generated-guard";
@@ -40,6 +41,7 @@ import { resolveToCwd } from "../../tools/path-utils";
 import { enforcePlanModeWrite, resolvePlanPath } from "../../tools/plan-mode-guard";
 import { formatCodeFrameLine } from "../../tools/render-utils";
 import { generateDiffString } from "../diff";
+import { type FileReadCache, getFileReadCache } from "../file-read-cache";
 import {
 	computeLineHash,
 	describeAnchorExamples,
@@ -52,6 +54,7 @@ import {
 	HL_HASH_CAPTURE_RE_RAW,
 } from "../line-hash";
 import { detectLineEnding, normalizeToLF, restoreLineEndings, stripBom } from "../normalize";
+import { readEditFileText, serializeEditFileText } from "../read-file";
 import type { EditToolDetails, LspBatchRequest } from "../renderer";
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -125,9 +128,6 @@ export interface ExecuteHashlineSingleOptions {
 // ───────────────────────────────────────────────────────────────────────────
 // 3. Constants & shared regexes
 // ───────────────────────────────────────────────────────────────────────────
-
-/** How far either side of an anchor we'll search when auto-rebasing on hash match. */
-export const ANCHOR_REBASE_WINDOW = 5;
 
 /** Lines of context shown either side of a hash mismatch. */
 const MISMATCH_CONTEXT = 2;
@@ -466,7 +466,7 @@ export function validateLineRef(ref: { line: number; hash: string }, fileLines: 
 }
 
 // ───────────────────────────────────────────────────────────────────────────
-// 8. Mismatch error & rebase
+// 8. Mismatch error
 // ───────────────────────────────────────────────────────────────────────────
 
 function getMismatchDisplayLines(mismatches: HashMismatch[], fileLines: string[]): number[] {
@@ -541,26 +541,6 @@ export class HashlineMismatchError extends Error {
 	}
 }
 
-/**
- * Try to find a unique line within ±window where the file's actual hash
- * matches the anchor's expected hash. Returns the new line number, or `null`
- * if zero or multiple candidates were found.
- */
-export function tryRebaseAnchor(
-	anchor: { line: number; hash: string },
-	fileLines: string[],
-	window: number = ANCHOR_REBASE_WINDOW,
-): number | null {
-	const lo = Math.max(1, anchor.line - window);
-	const hi = Math.min(fileLines.length, anchor.line + window);
-	let found: number | null = null;
-	for (let lineNum = lo; lineNum <= hi; lineNum++) {
-		if (computeLineHash(lineNum, fileLines[lineNum - 1] ?? "") !== anchor.hash) continue;
-		if (found !== null) return null;
-		found = lineNum;
-	}
-	return found;
-}
 
 // ───────────────────────────────────────────────────────────────────────────
 // 9. Compact diff preview
@@ -815,16 +795,12 @@ function getHashlineEditAnchors(edit: HashlineEdit): Anchor[] {
 }
 
 /**
- * Verify every anchor's hash, attempting a small ±window rebase before
- * reporting a mismatch. Mutates anchors in place when rebased. Also detects
- * ambiguous cases where two edits target the same line via different anchors,
- * one of which had to be rebased (treated as a mismatch).
+ * Verify every anchor's hash. Any mismatch is reported as a `HashMismatch`;
+ * there is no auto-rebase. Callers are expected to surface mismatches as
+ * `HashlineMismatchError` so the model re-reads and re-anchors.
  */
-function validateHashlineAnchors(edits: HashlineEdit[], fileLines: string[], warnings: string[]): HashMismatch[] {
+function validateHashlineAnchors(edits: HashlineEdit[], fileLines: string[]): HashMismatch[] {
 	const mismatches: HashMismatch[] = [];
-	const rebasedAnchors = new Map<Anchor, HashMismatch>();
-	const emittedRebaseKeys = new Set<string>();
-
 	for (const edit of edits) {
 		for (const anchor of getHashlineEditAnchors(edit)) {
 			if (anchor.line < 1 || anchor.line > fileLines.length) {
@@ -835,42 +811,9 @@ function validateHashlineAnchors(edits: HashlineEdit[], fileLines: string[], war
 			const actualHash = computeLineHash(anchor.line, fileLines[anchor.line - 1] ?? "");
 			if (actualHash === anchor.hash) continue;
 
-			const rebased = tryRebaseAnchor(anchor, fileLines);
-			if (rebased !== null) {
-				const original = `${anchor.line}${anchor.hash}`;
-				rebasedAnchors.set(anchor, { line: anchor.line, expected: anchor.hash, actual: actualHash });
-				anchor.line = rebased;
-				const rebaseKey = `${original}→${rebased}${anchor.hash}`;
-				if (!emittedRebaseKeys.has(rebaseKey)) {
-					emittedRebaseKeys.add(rebaseKey);
-					warnings.push(
-						`Auto-rebased anchor ${original} → ${rebased}${anchor.hash} ` +
-							`(line shifted within ±${ANCHOR_REBASE_WINDOW}; hash matched).`,
-					);
-				}
-				continue;
-			}
 			mismatches.push({ line: anchor.line, expected: anchor.hash, actual: actualHash });
 		}
 	}
-
-	// Detect collisions: two delete edits resolving to the same line, where at
-	// least one had to be rebased — that's likely the rebase landing on the
-	// wrong row, so surface the original mismatch.
-	const seenLines = new Map<number, Anchor>();
-	for (const edit of edits) {
-		if (edit.kind !== "delete") continue;
-		const existing = seenLines.get(edit.anchor.line);
-		if (existing) {
-			const rebasedA = rebasedAnchors.get(edit.anchor);
-			const rebasedB = rebasedAnchors.get(existing);
-			if (rebasedA) mismatches.push(rebasedA);
-			else if (rebasedB) mismatches.push(rebasedB);
-			continue;
-		}
-		seenLines.set(edit.anchor.line, edit.anchor);
-	}
-
 	return mismatches;
 }
 
@@ -1443,7 +1386,7 @@ export function applyHashlineEdits(
 		if (firstChangedLine === undefined || line < firstChangedLine) firstChangedLine = line;
 	};
 
-	const mismatches = validateHashlineAnchors(edits, fileLines, warnings);
+	const mismatches = validateHashlineAnchors(edits, fileLines);
 	if (mismatches.length > 0) throw new HashlineMismatchError(mismatches, fileLines);
 
 	const normalizedEdits = absorbReplacementBoundaryDuplicates(edits, fileLines, warnings, options);
@@ -1540,6 +1483,89 @@ export function applyHashlineEdits(
 }
 
 // ───────────────────────────────────────────────────────────────────────────
+// 11b. Anchor-stale recovery via cached read snapshots
+//
+// When `applyHashlineEdits` rejects because some anchors no longer match the
+// current on-disk content, the model may still have authored those anchors
+// against a real, valid version of the file — one that was just rendered to
+// it by the `read` or `search` tool, before something else (a subagent, a
+// linter, the user) modified the file out-of-band.
+//
+// The cache in `file-read-cache.ts` keeps a small LRU snapshot of those
+// rendered lines. We use it to reconstruct that "previous version", re-apply
+// the edits against it, and then 3-way-merge the resulting diff back onto
+// the live file. If the merge cleanly lands, that becomes our output. If
+// it doesn't (or the cache doesn't even cover the failing anchors), we
+// surface the original mismatch error so the model sees the truth.
+// ───────────────────────────────────────────────────────────────────────────
+
+export interface HashlineRecoveryArgs {
+	cache: FileReadCache;
+	absolutePath: string;
+	currentText: string;
+	edits: HashlineEdit[];
+	options: HashlineApplyOptions;
+}
+
+export interface HashlineRecoveryResult {
+	lines: string;
+	firstChangedLine: number | undefined;
+	warnings: string[];
+}
+
+const HASHLINE_RECOVERY_FUZZ_FACTOR = 3;
+
+const HASHLINE_RECOVERY_WARNING =
+	"Recovered from stale anchors using a previous read snapshot (file changed externally between read and edit).";
+
+/**
+ * Attempt to recover from a `HashlineMismatchError` by replaying the edits
+ * against a cached pre-edit snapshot of the file and 3-way-merging the result
+ * onto the current on-disk content. Returns `null` when no recovery is
+ * possible — callers should propagate the original mismatch error in that
+ * case.
+ */
+export function tryRecoverHashlineWithCache(args: HashlineRecoveryArgs): HashlineRecoveryResult | null {
+	const { cache, absolutePath, currentText, edits, options } = args;
+	const snapshot = cache.get(absolutePath);
+	if (!snapshot || snapshot.lines.size === 0) return null;
+
+	const overlaid = currentText.split("\n");
+	let maxCachedLine = 0;
+	for (const lineNum of snapshot.lines.keys()) {
+		if (lineNum > maxCachedLine) maxCachedLine = lineNum;
+	}
+	while (overlaid.length < maxCachedLine) overlaid.push("");
+	for (const [lineNum, content] of snapshot.lines) {
+		overlaid[lineNum - 1] = content;
+	}
+	const previousText = overlaid.join("\n");
+	if (previousText === currentText) return null;
+
+	let applied: ReturnType<typeof applyHashlineEdits>;
+	try {
+		applied = applyHashlineEdits(previousText, edits, options);
+	} catch (err) {
+		if (err instanceof HashlineMismatchError) return null;
+		throw err;
+	}
+	if (applied.lines === previousText) return null;
+
+	const patch = Diff.structuredPatch("file", "file", previousText, applied.lines, "", "", { context: 3 });
+	const merged = Diff.applyPatch(currentText, patch, { fuzzFactor: HASHLINE_RECOVERY_FUZZ_FACTOR });
+	if (typeof merged !== "string" || merged === currentText) return null;
+
+	const mergedDiff = generateDiffString(currentText, merged);
+	const recoveryWarnings = [HASHLINE_RECOVERY_WARNING, ...(applied.warnings ?? [])];
+
+	return {
+		lines: merged,
+		firstChangedLine: mergedDiff.firstChangedLine ?? applied.firstChangedLine,
+		warnings: recoveryWarnings,
+	};
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 // 12. Input splitting
 //
 // Hashline input may contain multiple file sections, each introduced by a
@@ -1547,7 +1573,7 @@ export function applyHashlineEdits(
 // but no header, we synthesize one from the caller-supplied `path` option.
 // ───────────────────────────────────────────────────────────────────────────
 
-interface HashlineInputSection {
+export interface HashlineInputSection {
 	path: string;
 	diff: string;
 }
@@ -1588,7 +1614,7 @@ function stripLeadingBlankLines(input: string): string {
 	return lines.join("\n");
 }
 
-function containsRecognizableHashlineOperations(input: string): boolean {
+export function containsRecognizableHashlineOperations(input: string): boolean {
 	for (const rawLine of input.split("\n")) {
 		const line = stripTrailingCarriageReturn(rawLine);
 		if (/^[+<=-]\s+/.test(line) || line.startsWith(HL_EDIT_SEP)) return true;
@@ -1656,30 +1682,27 @@ export function splitHashlineInputs(input: string, options: SplitHashlineOptions
 // 13. Diff computation (for streaming preview)
 // ───────────────────────────────────────────────────────────────────────────
 
-async function readHashlineFileText(file: { text(): Promise<string> }, pathText: string): Promise<string> {
+async function readHashlineFileText(
+	_file: { text(): Promise<string> },
+	absolutePath: string,
+	pathText: string,
+): Promise<string> {
 	try {
-		return await file.text();
+		return await readEditFileText(absolutePath, pathText);
 	} catch (error) {
-		if (isEnoent(error)) throw new Error(`File not found: ${pathText}`);
 		const message = error instanceof Error ? error.message : String(error);
 		throw new Error(message || `Unable to read ${pathText}`);
 	}
 }
 
-export async function computeHashlineDiff(
-	input: { input: string; path?: string },
+export async function computeHashlineSectionDiff(
+	section: HashlineInputSection,
 	cwd: string,
 	options: HashlineApplyOptions = {},
 ): Promise<{ diff: string; firstChangedLine: number | undefined } | { error: string }> {
 	try {
-		const sections = splitHashlineInputs(input.input, { cwd, path: input.path });
-		if (sections.length !== 1) {
-			return { error: "Streaming diff preview supports exactly one hashline section." };
-		}
-		const [section] = sections;
-
 		const absolutePath = resolveToCwd(section.path, cwd);
-		const rawContent = await readHashlineFileText(Bun.file(absolutePath), section.path);
+		const rawContent = await readHashlineFileText(Bun.file(absolutePath), absolutePath, section.path);
 		const { text: content } = stripBom(rawContent);
 		const normalized = normalizeToLF(content);
 		const result = applyHashlineEdits(normalized, parseHashline(section.diff), options);
@@ -1688,6 +1711,23 @@ export async function computeHashlineDiff(
 	} catch (err) {
 		return { error: err instanceof Error ? err.message : String(err) };
 	}
+}
+
+export async function computeHashlineDiff(
+	input: { input: string; path?: string },
+	cwd: string,
+	options: HashlineApplyOptions = {},
+): Promise<{ diff: string; firstChangedLine: number | undefined } | { error: string }> {
+	let sections: HashlineInputSection[];
+	try {
+		sections = splitHashlineInputs(input.input, { cwd, path: input.path });
+	} catch (err) {
+		return { error: err instanceof Error ? err.message : String(err) };
+	}
+	if (sections.length !== 1) {
+		return { error: "Streaming diff preview supports exactly one hashline section." };
+	}
+	return computeHashlineSectionDiff(sections[0], cwd, options);
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -1699,11 +1739,13 @@ interface ReadHashlineFileResult {
 	rawContent: string;
 }
 
-async function readHashlineFile(absolutePath: string): Promise<ReadHashlineFileResult> {
+async function readHashlineFile(absolutePath: string, pathText: string): Promise<ReadHashlineFileResult> {
 	try {
-		return { exists: true, rawContent: await Bun.file(absolutePath).text() };
+		return { exists: true, rawContent: await readEditFileText(absolutePath, pathText) };
 	} catch (error) {
 		if (isEnoent(error)) return { exists: false, rawContent: "" };
+		if (error instanceof Error && error.message === `File not found: ${pathText}`)
+			return { exists: false, rawContent: "" };
 		throw error;
 	}
 }
@@ -1734,6 +1776,39 @@ function getEditDetails(result: AgentToolResult<EditToolDetails>): EditToolDetai
 	return result.details ?? { diff: "" };
 }
 
+
+/**
+ * Apply hashline edits with anchor-stale recovery: on `HashlineMismatchError`,
+ * consult the read-snapshot cache for the file and 3-way-merge the edits onto
+ * the current text. If recovery succeeds, return the merged result with a
+ * synthetic warning. Otherwise re-throw the original mismatch error.
+ */
+function applyHashlineEditsWithRecovery(
+	session: ToolSession,
+	absolutePath: string,
+	text: string,
+	edits: HashlineEdit[],
+	options: HashlineApplyOptions,
+): ReturnType<typeof applyHashlineEdits> {
+	try {
+		return applyHashlineEdits(text, edits, options);
+	} catch (err) {
+		if (!(err instanceof HashlineMismatchError)) throw err;
+		const recovered = tryRecoverHashlineWithCache({
+			cache: getFileReadCache(session),
+			absolutePath,
+			currentText: text,
+			edits,
+			options,
+		});
+		if (!recovered) throw err;
+		return {
+			lines: recovered.lines,
+			firstChangedLine: recovered.firstChangedLine,
+			warnings: recovered.warnings,
+		};
+	}
+}
 /**
  * Run all the front-end checks (notebook guard, parse, plan-mode check, file
  * load, edit application) without writing. Used to fail fast before applying
@@ -1746,13 +1821,19 @@ async function preflightHashlineSection(options: ExecuteHashlineSingleOptions & 
 	const { edits } = parseHashlineWithWarnings(diff);
 	enforcePlanModeWrite(session, sectionPath, { op: "update" });
 
-	const source = await readHashlineFile(absolutePath);
+	const source = await readHashlineFile(absolutePath, sectionPath);
 	if (!source.exists && hasAnchorScopedEdit(edits)) throw new Error(`File not found: ${sectionPath}`);
 	if (source.exists) assertEditableFileContent(source.rawContent, sectionPath);
 
 	const { text } = stripBom(source.rawContent);
 	const normalized = normalizeToLF(text);
-	const result = applyHashlineEdits(normalized, edits, getHashlineApplyOptions(session));
+	const result = applyHashlineEditsWithRecovery(
+		session,
+		absolutePath,
+		normalized,
+		edits,
+		getHashlineApplyOptions(session),
+	);
 	if (normalized === result.lines) throw new Error(formatNoChangeDiagnostic(sectionPath));
 }
 
@@ -1773,14 +1854,20 @@ async function executeHashlineSection(
 	const { edits, warnings: parseWarnings } = parseHashlineWithWarnings(diff);
 	enforcePlanModeWrite(session, sourcePath, { op: "update" });
 
-	const source = await readHashlineFile(absolutePath);
+	const source = await readHashlineFile(absolutePath, sourcePath);
 	if (!source.exists && hasAnchorScopedEdit(edits)) throw new Error(`File not found: ${sourcePath}`);
 	if (source.exists) assertEditableFileContent(source.rawContent, sourcePath);
 
 	const { bom, text } = stripBom(source.rawContent);
 	const originalEnding = detectLineEnding(text);
 	const originalNormalized = normalizeToLF(text);
-	const result = applyHashlineEdits(originalNormalized, edits, getHashlineApplyOptions(session));
+	const result = applyHashlineEditsWithRecovery(
+		session,
+		absolutePath,
+		originalNormalized,
+		edits,
+		getHashlineApplyOptions(session),
+	);
 
 	if (originalNormalized === result.lines) {
 		return {
@@ -1789,7 +1876,11 @@ async function executeHashlineSection(
 		};
 	}
 
-	const finalContent = bom + restoreLineEndings(result.lines, originalEnding);
+	const finalContent = await serializeEditFileText(
+		absolutePath,
+		sourcePath,
+		bom + restoreLineEndings(result.lines, originalEnding),
+	);
 	const diagnostics = await writethrough(
 		absolutePath,
 		finalContent,
@@ -1799,6 +1890,11 @@ async function executeHashlineSection(
 		dst => (dst === absolutePath ? beginDeferredDiagnosticsForPath(absolutePath) : undefined),
 	);
 	invalidateFsScanAfterWrite(absolutePath);
+	// The post-edit content is the freshest, most authoritative "model view"
+	// of the file: the model just received it back as the diff/preview. Cache
+	// it so a follow-up edit anchored against this state can still recover
+	// if the file is touched out-of-band before the next edit lands.
+	getFileReadCache(session).recordContiguous(absolutePath, 1, result.lines.split("\n"));
 
 	const diffResult = generateDiffString(originalNormalized, result.lines);
 	const meta = outputMeta()
@@ -1869,7 +1965,7 @@ export async function executeHashlineSingle(
  * Collapse consecutive or interleaved sections targeting the same path into a
  * single section with concatenated diffs. Anchors authored against the same
  * file snapshot must be applied as one batch; otherwise the first sub-edit
- * shifts line numbers out from under the second's anchors and rebase fails.
+ * shifts line numbers out from under the second's anchors and validation fails.
  * Path order is preserved by first occurrence.
  */
 function mergeSamePathSections(sections: HashlineInputSection[]): HashlineInputSection[] {

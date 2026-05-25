@@ -232,6 +232,10 @@ export interface ToolSession {
 	sandboxCaps?: import("@oh-my-pi/pi-natives").SandboxCaps;
 	/** Sandbox proxy environment variables to inject into shell child processes. */
 	sandboxEnv?: Record<string, string>;
+	/** Cached read-tool snapshots for stale-anchor recovery. Lazily initialized by `getFileReadCache`.
+	 *  Holds a per-path LRU of line content the model last observed, used to 3-way-merge edits when files change
+	 *  out-of-band. Lazily initialized by `getFileReadCache`. */
+	fileReadCache?: import("../edit/file-read-cache").FileReadCache;
 }
 
 export type ToolFactory = (session: ToolSession) => Tool | null | Promise<Tool | null>;

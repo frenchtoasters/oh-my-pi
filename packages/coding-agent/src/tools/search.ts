@@ -6,6 +6,7 @@ import type { Component } from "@oh-my-pi/pi-tui";
 import { Text } from "@oh-my-pi/pi-tui";
 import { prompt, untilAborted } from "@oh-my-pi/pi-utils";
 import { type Static, Type } from "@sinclair/typebox";
+import { getFileReadCache } from "../edit/file-read-cache";
 import type { RenderResultOptions } from "../extensibility/custom-tools/types";
 import type { Theme } from "../modes/theme/theme";
 import searchDescription from "../prompts/tools/search.md" with { type: "text" };
@@ -387,6 +388,22 @@ export class SearchTool implements AgentTool<typeof searchSchema, SearchToolDeta
 					outputLines.push(...rendered.model);
 					displayLines.push(...rendered.display);
 				}
+			}
+
+			// Record sparse line snapshots in the file-read cache for stale-anchor recovery.
+			const cache = getFileReadCache(this.session);
+			for (const [relativePath, fileMatches] of matchesByFile) {
+				const cacheEntries: Array<readonly [number, string]> = [];
+				for (const match of fileMatches) {
+					if (match.contextBefore) {
+						for (const ctx of match.contextBefore) cacheEntries.push([ctx.lineNumber, ctx.line]);
+					}
+					cacheEntries.push([match.lineNumber, match.line]);
+					if (match.contextAfter) {
+						for (const ctx of match.contextAfter) cacheEntries.push([ctx.lineNumber, ctx.line]);
+					}
+				}
+				cache.recordSparse(path.resolve(searchPath, relativePath), cacheEntries);
 			}
 			if (matchLimitReached || result.limitReached) {
 				outputLines.push("", limitMessage);

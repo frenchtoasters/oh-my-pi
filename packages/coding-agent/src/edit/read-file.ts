@@ -16,3 +16,7 @@ export async function readEditFileText(absolutePath: string, path: string): Prom
 		throw error;
 	}
 }
+
+export async function serializeEditFileText(_absolutePath: string, _path: string, content: string): Promise<string> {
+	return content;
+}
