@@ -21,16 +21,16 @@ for (const [provider, models] of Object.entries(MODELS)) {
 
 export type GeneratedProvider = keyof typeof MODELS;
 
-export function getBundledModel<TApi extends Api = Api>(provider: GeneratedProvider, modelId: string): Model<TApi> {
+export function getBundledModel<TApi extends Api = Api>(provider: GeneratedProvider | (string & {}), modelId: string): Model<TApi> {
 	const providerModels = modelRegistry.get(provider);
 	return providerModels?.get(modelId) as Model<TApi>;
 }
 
-export function getBundledProviders(): KnownProvider[] {
-	return Array.from(modelRegistry.keys()) as KnownProvider[];
+export function getBundledProviders(): string[] {
+	return Array.from(modelRegistry.keys());
 }
 
-export function getBundledModels(provider: GeneratedProvider): Model<Api>[] {
+export function getBundledModels(provider: GeneratedProvider | (string & {})): Model<Api>[] {
 	const models = modelRegistry.get(provider);
 	return models ? (Array.from(models.values()) as Model<Api>[]) : [];
 }

@@ -552,80 +552,9 @@ describe("Generate E2E Tests", () => {
 		});
 	});
 
-	describe("Google Vertex Provider (gemini-3-flash-preview)", () => {
-		const vertexApiKey = Bun.env.GOOGLE_CLOUD_API_KEY;
-		const vertexProject = Bun.env.GOOGLE_CLOUD_PROJECT || Bun.env.GCLOUD_PROJECT;
-		const vertexLocation = Bun.env.GOOGLE_CLOUD_LOCATION;
-		const isVertexConfigured = Boolean(vertexProject && vertexLocation);
-		const vertexOptions = { project: vertexProject, location: vertexLocation } as const;
-		const llm = getBundledModel("google-vertex", "gemini-3-flash-preview");
-
-		it.skipIf(!vertexApiKey)(
-			"should complete basic text generation with Vertex API key",
-			async () => {
-				await basicTextGeneration(llm, { apiKey: vertexApiKey! });
-			},
-			{ retry: 3 },
-		);
-
-		it.skipIf(!isVertexConfigured)(
-			"should complete basic text generation",
-			async () => {
-				await basicTextGeneration(llm, vertexOptions);
-			},
-			{ retry: 3 },
-		);
-
-		it.skipIf(!isVertexConfigured)(
-			"should handle tool calling",
-			async () => {
-				await handleToolCall(llm, vertexOptions);
-			},
-			{ retry: 3 },
-		);
-
-		it.skipIf(!isVertexConfigured)(
-			"should handle thinking",
-			async () => {
-				await handleThinking(llm, {
-					...vertexOptions,
-					thinking: { enabled: true, budgetTokens: 1024, level: "LOW" },
-				});
-			},
-			{ retry: 3 },
-		);
-
-		it.skipIf(!isVertexConfigured)(
-			"should handle streaming",
-			async () => {
-				await handleStreaming(llm, vertexOptions);
-			},
-			{ retry: 3 },
-		);
-
-		it.skipIf(!isVertexConfigured)(
-			"should handle multi-turn with thinking and tools",
-			async () => {
-				await multiTurn(llm, {
-					...vertexOptions,
-					thinking: { enabled: true, budgetTokens: 1024, level: "MEDIUM" },
-				});
-			},
-			{ retry: 3 },
-		);
-
-		it.skipIf(!isVertexConfigured)(
-			"should handle image input",
-			async () => {
-				await handleImage(llm, vertexOptions);
-			},
-			{ retry: 3 },
-		);
-	});
-
 	describe.skipIf(!e2eApiKey("OPENAI_API_KEY"))("OpenAI Completions Provider (gpt-4o-mini)", () => {
 		const llm: Model<"openai-completions"> = {
-			...(getBundledModel("openai", "gpt-4o-mini") as Model<"openai-completions">),
+			...(getBundledModel("litellm", "gpt-4o-mini") as Model<"openai-completions">),
 			api: "openai-completions",
 		};
 
@@ -662,57 +591,6 @@ describe("Generate E2E Tests", () => {
 		);
 	});
 
-	describe.skipIf(!e2eApiKey("OPENAI_API_KEY"))("OpenAI Responses Provider (gpt-5-mini)", () => {
-		const llm = getBundledModel("openai", "gpt-5-mini") as Model<"openai-responses">;
-
-		it(
-			"should complete basic text generation",
-			async () => {
-				await basicTextGeneration(llm);
-			},
-			{ retry: 3 },
-		);
-
-		it(
-			"should handle tool calling",
-			async () => {
-				await handleToolCall(llm);
-			},
-			{ retry: 3 },
-		);
-
-		it(
-			"should handle streaming",
-			async () => {
-				await handleStreaming(llm);
-			},
-			{ retry: 3 },
-		);
-
-		it(
-			"should handle thinking",
-			async () => {
-				await handleThinking(llm, { reasoning: Effort.High });
-			},
-			{ retry: 2 },
-		);
-
-		it(
-			"should handle multi-turn with thinking and tools",
-			async () => {
-				await multiTurn(llm, { reasoning: Effort.High });
-			},
-			{ retry: 3 },
-		);
-
-		it(
-			"should handle image input",
-			async () => {
-				await handleImage(llm);
-			},
-			{ retry: 3 },
-		);
-	});
 
 	describe.skipIf(!e2eApiKey("ANTHROPIC_API_KEY"))("Anthropic Provider (claude-haiku-4-5-20251001)", () => {
 		const model = getBundledModel("anthropic", "claude-haiku-4-5-20251001");
@@ -750,41 +628,6 @@ describe("Generate E2E Tests", () => {
 		);
 	});
 
-	describe.skipIf(!e2eApiKey("OPENAI_API_KEY"))("OpenAI Responses Provider (gpt-5-mini)", () => {
-		const model = getBundledModel("openai", "gpt-5-mini") as Model<"openai-responses">;
-
-		it(
-			"should complete basic text generation",
-			async () => {
-				await basicTextGeneration(model);
-			},
-			{ retry: 3 },
-		);
-
-		it(
-			"should handle tool calling",
-			async () => {
-				await handleToolCall(model);
-			},
-			{ retry: 3 },
-		);
-
-		it(
-			"should handle streaming",
-			async () => {
-				await handleStreaming(model);
-			},
-			{ retry: 3 },
-		);
-
-		it(
-			"should handle image input",
-			async () => {
-				await handleImage(model);
-			},
-			{ retry: 3 },
-		);
-	});
 
 	describe.skipIf(!e2eApiKey("XAI_API_KEY"))("xAI Provider (grok-code-fast-1 via OpenAI Completions)", () => {
 		const llm = getBundledModel("xai", "grok-code-fast-1");

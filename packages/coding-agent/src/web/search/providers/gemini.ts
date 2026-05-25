@@ -5,20 +5,72 @@
  * Requires OAuth credentials stored in agent.db for provider "google-gemini-cli" or "google-antigravity".
  * Returns synthesized answers with citations and source metadata from grounding chunks.
  */
-import {
-	ANTIGRAVITY_SYSTEM_INSTRUCTION,
-	extractRetryDelay,
-	getAntigravityUserAgent,
-	getGeminiCliHeaders,
-} from "@oh-my-pi/pi-ai";
-import { refreshAntigravityToken } from "@oh-my-pi/pi-ai/utils/oauth/google-antigravity";
-import { refreshGoogleCloudToken } from "@oh-my-pi/pi-ai/utils/oauth/google-gemini-cli";
+
+import type { OAuthCredentials } from "@oh-my-pi/pi-ai/utils/oauth/types";
 import { getAgentDbPath } from "@oh-my-pi/pi-utils";
 import { AgentStorage } from "../../../session/agent-storage";
 import type { SearchCitation, SearchResponse, SearchSource } from "../../../web/search/types";
 import { SearchProviderError } from "../../../web/search/types";
 import type { SearchParams } from "./base";
 import { SearchProvider } from "./base";
+
+const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
+
+// Public installed-app OAuth client credentials for Google developer tooling.
+// These are not secrets — they are embedded in published CLI tools (Gemini CLI, Antigravity).
+const ANTIGRAVITY_CLIENT_ID = atob(
+	"MTA3MTAwNjA2MDU5MS10bWhzc2luMmgyMWxjcmUyMzV2dG9sb2poNGc0MDNlcC5hcHBzLmdvb2dsZXVzZXJjb250ZW50LmNvbQ==",
+);
+const ANTIGRAVITY_CLIENT_SECRET = atob("R09DU1BYLUs1OEZXUjQ4NkxkTEoxbUxCOHNYQzR6NnFEQWY=");
+
+const GEMINI_CLI_CLIENT_ID = atob(
+	"NjgxMjU1ODA5Mzk1LW9vOGZ0Mm9wcmRybnA5ZTNhcWY2YXYzaG1kaWIxMzVqLmFwcHMuZ29vZ2xldXNlcmNvbnRlbnQuY29t",
+);
+const GEMINI_CLI_CLIENT_SECRET = atob("R09DU1BYLTR1SGdNUG0tMW83U2stZ2VWNkN1NWNsWEZzeGw=");
+
+async function refreshGoogleOAuthToken(
+	refreshToken: string,
+	projectId: string,
+	clientId: string,
+	clientSecret: string,
+): Promise<OAuthCredentials> {
+	const response = await fetch(GOOGLE_TOKEN_URL, {
+		method: "POST",
+		headers: { "Content-Type": "application/x-www-form-urlencoded" },
+		body: new URLSearchParams({
+			client_id: clientId,
+			client_secret: clientSecret,
+			refresh_token: refreshToken,
+			grant_type: "refresh_token",
+		}),
+	});
+
+	if (!response.ok) {
+		const error = await response.text();
+		throw new Error(`Google OAuth token refresh failed: ${error}`);
+	}
+
+	const data = (await response.json()) as {
+		access_token: string;
+		expires_in: number;
+		refresh_token?: string;
+	};
+
+	return {
+		refresh: data.refresh_token || refreshToken,
+		access: data.access_token,
+		expires: Date.now() + data.expires_in * 1000 - 5 * 60 * 1000,
+		projectId,
+	};
+}
+
+function refreshAntigravityToken(refreshToken: string, projectId: string): Promise<OAuthCredentials> {
+	return refreshGoogleOAuthToken(refreshToken, projectId, ANTIGRAVITY_CLIENT_ID, ANTIGRAVITY_CLIENT_SECRET);
+}
+
+function refreshGoogleCloudToken(refreshToken: string, projectId: string): Promise<OAuthCredentials> {
+	return refreshGoogleOAuthToken(refreshToken, projectId, GEMINI_CLI_CLIENT_ID, GEMINI_CLI_CLIENT_SECRET);
+}
 
 const DEFAULT_ENDPOINT = "https://cloudcode-pa.googleapis.com";
 const ANTIGRAVITY_DAILY_ENDPOINT = "https://daily-cloudcode-pa.googleapis.com";
@@ -248,7 +300,7 @@ async function callGeminiSearch(
 	usage?: { inputTokens: number; outputTokens: number; totalTokens: number };
 }> {
 	const endpoints = auth.isAntigravity ? ANTIGRAVITY_ENDPOINT_FALLBACKS : [DEFAULT_ENDPOINT];
-	const headers = auth.isAntigravity ? { "User-Agent": getAntigravityUserAgent() } : getGeminiCliHeaders();
+	const headers: Record<string, string> = auth.isAntigravity ? { "User-Agent": "oh-my-pi/search" } : {};
 
 	const requestMetadata = auth.isAntigravity
 		? {
@@ -263,12 +315,6 @@ async function callGeminiSearch(
 
 	const normalizedSystemPrompt = systemPrompt?.toWellFormed();
 	const systemInstructionParts: Array<{ text: string }> = [
-		...(auth.isAntigravity
-			? [
-					{ text: ANTIGRAVITY_SYSTEM_INSTRUCTION },
-					{ text: `Please ignore following [ignore]${ANTIGRAVITY_SYSTEM_INSTRUCTION}[/ignore]` },
-				]
-			: []),
 		...(normalizedSystemPrompt ? [{ text: normalizedSystemPrompt }] : []),
 	];
 
@@ -356,7 +402,31 @@ async function callGeminiSearch(
 				response.status === 504;
 
 			if (isRetryableStatus && attempt < MAX_RETRIES) {
-				const serverDelay = extractRetryDelay(errorText, response);
+				const retryAfterHeader = response.headers.get("retry-after");
+				const rateLimitReset = response.headers.get("x-ratelimit-reset");
+				const rateLimitResetAfter = response.headers.get("x-ratelimit-reset-after");
+				let parsedDelay = NaN;
+				if (retryAfterHeader) {
+					const asInt = parseInt(retryAfterHeader, 10);
+					if (Number.isFinite(asInt)) {
+						parsedDelay = asInt * 1000;
+					} else {
+						// Try HTTP date format (RFC 7231)
+						const dateMs = Date.parse(retryAfterHeader);
+						if (!Number.isNaN(dateMs)) {
+							parsedDelay = dateMs - Date.now();
+						}
+					}
+				} else if (rateLimitResetAfter) {
+					parsedDelay = parseFloat(rateLimitResetAfter) * 1000;
+				} else if (rateLimitReset) {
+					const resetMs = Number(rateLimitReset) * 1000;
+					if (Number.isFinite(resetMs)) {
+						parsedDelay = resetMs - Date.now();
+					}
+				}
+				const serverDelay =
+					Number.isFinite(parsedDelay) && parsedDelay > 0 ? Math.ceil(parsedDelay + 1000) : undefined;
 				if (response.status === 429) {
 					if (serverDelay && rateLimitTimeSpent + serverDelay <= RATE_LIMIT_BUDGET_MS) {
 						rateLimitTimeSpent += serverDelay;

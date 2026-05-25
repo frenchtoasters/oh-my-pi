@@ -1139,18 +1139,14 @@ export class ModelRegistry {
 	}
 
 	#normalizeDiscoverableModels(providerConfig: DiscoveryProviderConfig, models: Model<Api>[]): Model<Api>[] {
-		if (providerConfig.provider !== "ollama" || providerConfig.api !== "openai-responses") {
-			return models;
-		}
-
-		return models.map(model => (model.api === "openai-completions" ? { ...model, api: "openai-responses" } : model));
+		return models;
 	}
 
 	#addImplicitDiscoverableProviders(configuredProviders: Set<string>): void {
 		if (!configuredProviders.has("ollama")) {
 			this.#discoverableProviders.push({
 				provider: "ollama",
-				api: "openai-responses",
+				api: "openai-completions",
 				baseUrl: Bun.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434",
 				discovery: { type: "ollama" },
 				optional: true,
@@ -1160,7 +1156,7 @@ export class ModelRegistry {
 		if (!configuredProviders.has("llama.cpp")) {
 			this.#discoverableProviders.push({
 				provider: "llama.cpp",
-				api: "openai-responses",
+				api: "openai-completions",
 				baseUrl: Bun.env.LLAMA_CPP_BASE_URL || "http://127.0.0.1:8080",
 				discovery: { type: "llama.cpp" },
 				optional: true,

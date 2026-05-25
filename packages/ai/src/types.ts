@@ -1,61 +1,17 @@
 import type { TSchema } from "@sinclair/typebox";
-import type { BedrockOptions } from "./providers/amazon-bedrock";
 import type { AnthropicOptions } from "./providers/anthropic";
-import type { AzureOpenAIResponsesOptions } from "./providers/azure-openai-responses";
-import type { CursorOptions } from "./providers/cursor";
-import type {
-	DeleteArgs,
-	DeleteResult,
-	DiagnosticsArgs,
-	DiagnosticsResult,
-	GrepArgs,
-	GrepResult,
-	LsArgs,
-	LsResult,
-	McpResult,
-	ReadArgs,
-	ReadResult,
-	ShellArgs,
-	ShellResult,
-	WriteArgs,
-	WriteResult,
-} from "./providers/cursor/gen/agent_pb";
 import type { GoogleOptions } from "./providers/google";
-import type { GoogleGeminiCliOptions } from "./providers/google-gemini-cli";
-import type { GoogleVertexOptions } from "./providers/google-vertex";
-import type { OllamaChatOptions } from "./providers/ollama";
-import type { OpenAICodexResponsesOptions } from "./providers/openai-codex-responses";
 import type { OpenAICompletionsOptions } from "./providers/openai-completions";
-import type { OpenAIResponsesOptions } from "./providers/openai-responses";
 import type { AssistantMessageEventStream } from "./utils/event-stream";
 
 export type { AssistantMessageEventStream } from "./utils/event-stream";
 
-export type KnownApi =
-	| "openai-completions"
-	| "openai-responses"
-	| "openai-codex-responses"
-	| "azure-openai-responses"
-	| "anthropic-messages"
-	| "bedrock-converse-stream"
-	| "google-generative-ai"
-	| "google-gemini-cli"
-	| "google-vertex"
-	| "ollama-chat"
-	| "cursor-agent";
+export type KnownApi = "openai-completions" | "anthropic-messages" | "google-generative-ai";
 export type Api = KnownApi | (string & {});
 export interface ApiOptionsMap {
-	"anthropic-messages": AnthropicOptions;
-	"bedrock-converse-stream": BedrockOptions;
 	"openai-completions": OpenAICompletionsOptions;
-	"openai-responses": OpenAIResponsesOptions;
-	"openai-codex-responses": OpenAICodexResponsesOptions;
-	"azure-openai-responses": AzureOpenAIResponsesOptions;
+	"anthropic-messages": AnthropicOptions;
 	"google-generative-ai": GoogleOptions;
-	"google-gemini-cli": GoogleGeminiCliOptions;
-	"google-vertex": GoogleVertexOptions;
-	"ollama-chat": OllamaChatOptions;
-	"cursor-agent": CursorOptions;
 }
 // Compile-time exhaustiveness check - this will fail if ApiOptionsMap doesn't have all KnownApi keys
 type _CheckExhaustive =
@@ -89,52 +45,7 @@ export interface ThinkingConfig {
 	mode: ThinkingControlMode;
 }
 
-export type KnownProvider =
-	| "alibaba-coding-plan"
-	| "amazon-bedrock"
-	| "anthropic"
-	| "google"
-	| "google-gemini-cli"
-	| "google-antigravity"
-	| "google-vertex"
-	| "openai"
-	| "openai-codex"
-	| "kimi-code"
-	| "minimax-code"
-	| "minimax-code-cn"
-	| "github-copilot"
-	| "fireworks"
-	| "gitlab-duo"
-	| "cursor"
-	| "deepseek"
-	| "xai"
-	| "groq"
-	| "cerebras"
-	| "openrouter"
-	| "kilo"
-	| "vercel-ai-gateway"
-	| "zai"
-	| "mistral"
-	| "minimax"
-	| "opencode-go"
-	| "opencode-zen"
-	| "synthetic"
-	| "cloudflare-ai-gateway"
-	| "huggingface"
-	| "litellm"
-	| "moonshot"
-	| "nvidia"
-	| "nanogpt"
-	| "ollama"
-	| "ollama-cloud"
-	| "qianfan"
-	| "qwen-portal"
-	| "together"
-	| "venice"
-	| "vllm"
-	| "xiaomi"
-	| "zenmux"
-	| "lm-studio";
+export type KnownProvider = "litellm";
 export type Provider = KnownProvider | string;
 
 import type { Effort } from "./model-thinking";
@@ -163,7 +74,8 @@ export function shouldSendServiceTier(
 	serviceTier?: ServiceTier | null,
 	provider?: Provider,
 ): serviceTier is "flex" | "scale" | "priority" {
-	if (provider !== "openai" && provider !== "openai-codex") {
+	// "openai" retained for custom direct-API configurations; "litellm" covers all bundled OpenAI models
+	if (provider !== "openai" && provider !== "litellm") {
 		return false;
 	}
 	return serviceTier === "flex" || serviceTier === "scale" || serviceTier === "priority";
@@ -239,8 +151,6 @@ export interface StreamOptions {
 	 * Set to 0 to disable the first-event watchdog for this request.
 	 */
 	streamFirstEventTimeoutMs?: number;
-	/** Cursor exec/MCP tool handlers (cursor-agent only). */
-	execHandlers?: CursorExecHandlers;
 }
 
 // Unified options with reasoning passed to streamSimple() and completeSimple()
@@ -257,10 +167,6 @@ export interface SimpleStreamOptions extends StreamOptions {
 	disableReasoning?: boolean;
 	/** Custom token budgets for thinking levels (token-based providers only) */
 	thinkingBudgets?: ThinkingBudgets;
-	/** Cursor exec handlers for local tool execution */
-	cursorExecHandlers?: CursorExecHandlers;
-	/** Hook to handle tool results from Cursor exec */
-	cursorOnToolResult?: CursorToolResultHandler;
 	/** Optional tool choice override for compatible providers */
 	toolChoice?: ToolChoice;
 	/** OpenAI service tier for processing priority/cost control. Ignored by non-OpenAI providers. */
@@ -318,11 +224,10 @@ export interface ToolCall {
 	thoughtSignature?: string; // Google-specific: opaque signature for reusing thought context
 	intent?: string; // Harness-level intent metadata extracted from traced tool arguments
 	/**
-	 * Original wire-level name when the tool was invoked via OpenAI's custom-tool
-	 * mechanism (e.g., `apply_patch`). Set by `openai-responses` on receive so
-	 * the history-replay path can re-emit the call as `custom_tool_call` with
-	 * its paired tool-result as `custom_tool_call_output`. Absent for regular
-	 * JSON function tools.
+	 * Original wire-level name when the tool was invoked via a provider's custom-tool
+	 * mechanism (e.g., `apply_patch`). Set on receive so the history-replay path
+	 * can re-emit the call as `custom_tool_call` with its paired tool-result as
+	 * `custom_tool_call_output`. Absent for regular JSON function tools.
 	 */
 	customWireName?: string;
 }
@@ -376,15 +281,6 @@ export interface Usage {
 
 export type StopReason = "stop" | "length" | "toolUse" | "error" | "aborted";
 
-export interface OpenAIResponsesHistoryPayload {
-	type: "openaiResponsesHistory";
-	provider?: string;
-	dt?: boolean;
-	items: Array<Record<string, unknown>>;
-}
-
-export type ProviderPayload = OpenAIResponsesHistoryPayload;
-
 export interface UserMessage {
 	role: "user";
 	content: string | (TextContent | ImageContent)[];
@@ -392,8 +288,6 @@ export interface UserMessage {
 	synthetic?: boolean;
 	/** Who initiated this message for billing/attribution semantics. */
 	attribution?: MessageAttribution;
-	/** Provider-specific opaque payload used to reconstruct transport-native history. */
-	providerPayload?: ProviderPayload;
 	timestamp: number; // Unix timestamp in milliseconds
 }
 
@@ -402,8 +296,6 @@ export interface DeveloperMessage {
 	content: string | (TextContent | ImageContent)[];
 	/** Who initiated this message for billing/attribution semantics. */
 	attribution?: MessageAttribution;
-	/** Provider-specific opaque payload used to reconstruct transport-native history. */
-	providerPayload?: ProviderPayload;
 	timestamp: number; // Unix timestamp in milliseconds
 }
 
@@ -417,8 +309,6 @@ export interface AssistantMessage {
 	usage: Usage;
 	stopReason: StopReason;
 	errorMessage?: string;
-	/** Provider-specific opaque payload used to reconstruct transport-native history. */
-	providerPayload?: ProviderPayload;
 	timestamp: number; // Unix timestamp in milliseconds
 	duration?: number; // Request duration in milliseconds
 	ttft?: number; // Time to first token in milliseconds
@@ -440,42 +330,6 @@ export interface ToolResultMessage<TDetails = any> {
 
 export type Message = UserMessage | DeveloperMessage | AssistantMessage | ToolResultMessage;
 
-export type CursorExecHandlerResult<T> = { result: T; toolResult?: ToolResultMessage } | T | ToolResultMessage;
-
-export type CursorToolResultHandler = (
-	result: ToolResultMessage,
-) => ToolResultMessage | undefined | Promise<ToolResultMessage | undefined>;
-
-export interface CursorMcpCall {
-	name: string;
-	providerIdentifier: string;
-	toolName: string;
-	toolCallId: string;
-	args: Record<string, unknown>;
-	rawArgs: Record<string, Uint8Array>;
-}
-
-export interface CursorShellStreamCallbacks {
-	onStdout(data: string): void;
-	onStderr(data: string): void;
-}
-
-export interface CursorExecHandlers {
-	read?: (args: ReadArgs) => Promise<CursorExecHandlerResult<ReadResult>>;
-	ls?: (args: LsArgs) => Promise<CursorExecHandlerResult<LsResult>>;
-	grep?: (args: GrepArgs) => Promise<CursorExecHandlerResult<GrepResult>>;
-	write?: (args: WriteArgs) => Promise<CursorExecHandlerResult<WriteResult>>;
-	delete?: (args: DeleteArgs) => Promise<CursorExecHandlerResult<DeleteResult>>;
-	shell?: (args: ShellArgs) => Promise<CursorExecHandlerResult<ShellResult>>;
-	shellStream?: (
-		args: ShellArgs,
-		callbacks: CursorShellStreamCallbacks,
-	) => Promise<CursorExecHandlerResult<ShellResult>>;
-	diagnostics?: (args: DiagnosticsArgs) => Promise<CursorExecHandlerResult<DiagnosticsResult>>;
-	mcp?: (call: CursorMcpCall) => Promise<CursorExecHandlerResult<McpResult>>;
-	onToolResult?: CursorToolResultHandler;
-}
-
 export interface Tool<TParameters extends TSchema = TSchema> {
 	name: string;
 	description: string;
@@ -484,8 +338,7 @@ export interface Tool<TParameters extends TSchema = TSchema> {
 	strict?: boolean;
 	/**
 	 * Optional grammar constraint for OpenAI custom-tool emission.
-	 * When set, providers that support grammar-constrained tools (currently only
-	 * `openai-responses` against models with the right capability flag) may emit
+	 * When set, providers that support grammar-constrained tools may emit
 	 * this tool as `{type: "custom", format: {type: "grammar", …}}` instead of a
 	 * JSON function tool. Other providers ignore the field.
 	 */
@@ -629,10 +482,6 @@ export interface OpenAICompat {
 	 * Default: auto-detected (DeepSeek reasoning models).
 	 */
 	disableReasoningOnToolChoice?: boolean;
-	/** OpenRouter-specific routing preferences. Only used when baseUrl points to OpenRouter. */
-	openRouterRouting?: OpenRouterRouting;
-	/** Vercel AI Gateway routing preferences. Only used when baseUrl points to Vercel AI Gateway. */
-	vercelGatewayRouting?: VercelGatewayRouting;
 	/** Extra fields to include in request body (e.g. gateway routing hints for OpenClaw-style proxies). */
 	extraBody?: Record<string, unknown>;
 	/** Whether the provider supports the `strict` field in tool definitions. Default: auto-detected per provider/baseUrl (conservative for unknown providers). */
@@ -666,30 +515,6 @@ export interface AnthropicCompat {
 	supportsLongCacheRetention?: boolean;
 }
 
-/**
- * OpenRouter provider routing preferences.
- * Controls which upstream providers OpenRouter routes requests to.
- * @see https://openrouter.ai/docs/provider-routing
- */
-export interface OpenRouterRouting {
-	/** List of provider slugs to exclusively use for this request (e.g., ["amazon-bedrock", "anthropic"]). */
-	only?: string[];
-	/** List of provider slugs to try in order (e.g., ["anthropic", "openai"]). */
-	order?: string[];
-}
-
-/**
- * Vercel AI Gateway routing preferences.
- * Controls which upstream providers the gateway routes requests to.
- * @see https://vercel.com/docs/ai-gateway/models-and-providers/provider-options
- */
-export interface VercelGatewayRouting {
-	/** List of provider slugs to exclusively use for this request (e.g., ["bedrock", "anthropic"]). */
-	only?: string[];
-	/** List of provider slugs to try in order (e.g., ["anthropic", "openai"]). */
-	order?: string[];
-}
-
 // Model interface for the unified model system
 export interface Model<TApi extends Api = any> {
 	id: string;
@@ -719,7 +544,7 @@ export interface Model<TApi extends Api = any> {
 	/** Canonical thinking capability metadata for this model. */
 	thinking?: ThinkingConfig;
 	/** Compatibility overrides per API. If not set, auto-detected from baseUrl. */
-	compat?: TApi extends "openai-completions" | "openai-responses"
+	compat?: TApi extends "openai-completions"
 		? OpenAICompat
 		: TApi extends "anthropic-messages"
 			? AnthropicCompat

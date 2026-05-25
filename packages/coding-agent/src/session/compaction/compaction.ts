@@ -13,19 +13,8 @@ import {
 	type Model,
 	type Usage,
 } from "@oh-my-pi/pi-ai";
-import {
-	CODEX_BASE_URL,
-	getCodexAccountId,
-	OPENAI_HEADER_VALUES,
-	OPENAI_HEADERS,
-} from "@oh-my-pi/pi-ai/providers/openai-codex/constants";
-import { parseTextSignature } from "@oh-my-pi/pi-ai/providers/openai-responses-shared";
 import { transformMessages } from "@oh-my-pi/pi-ai/providers/transform-messages";
-import {
-	getOpenAIResponsesHistoryItems,
-	getOpenAIResponsesHistoryPayload,
-	normalizeResponsesToolCallId,
-} from "@oh-my-pi/pi-ai/utils";
+
 import { countTokens } from "@oh-my-pi/pi-natives";
 import { logger, prompt } from "@oh-my-pi/pi-utils";
 import compactionShortSummaryPrompt from "../../prompts/compaction/compaction-short-summary.md" with { type: "text" };
@@ -549,31 +538,76 @@ interface RemoteCompactionResponse {
 	shortSummary?: string;
 }
 
-function shouldUseOpenAiRemoteCompaction(model: Model): boolean {
-	return model.provider === "openai" || model.provider === "openai-codex";
-}
-
-function resolveOpenAiCompactEndpoint(model: Model): string {
-	if (model.provider === "openai-codex") {
-		return resolveOpenAiCodexCompactEndpoint(model.baseUrl);
+function parseTextSignature(
+	signature: string | undefined,
+): { id: string; phase?: "commentary" | "final_answer" } | undefined {
+	if (!signature) return undefined;
+	if (signature.startsWith("{")) {
+		try {
+			const parsed = JSON.parse(signature) as { v?: number; id?: string; phase?: string };
+			if (parsed.v === 1 && typeof parsed.id === "string") {
+				if (parsed.phase === "commentary" || parsed.phase === "final_answer") {
+					return { id: parsed.id, phase: parsed.phase };
+				}
+				return { id: parsed.id };
+			}
+		} catch {
+			// Fall through to legacy plain-string handling.
+		}
 	}
-
-	const defaultBase = "https://api.openai.com/v1";
-	const rawBase = model.baseUrl && model.baseUrl.length > 0 ? model.baseUrl : defaultBase;
-	const normalizedBase = rawBase.endsWith("/") ? rawBase.slice(0, -1) : rawBase;
-	if (normalizedBase.endsWith("/v1")) return `${normalizedBase}/responses/compact`;
-	return `${normalizedBase}/v1/responses/compact`;
+	return { id: signature };
 }
 
-function resolveOpenAiCodexCompactEndpoint(baseUrl: string | undefined): string {
-	const rawBase = baseUrl && baseUrl.length > 0 ? baseUrl : CODEX_BASE_URL;
-	const normalizedBase = rawBase.endsWith("/") ? rawBase.slice(0, -1) : rawBase;
-	if (/\/codex(?:\/v\d+)?$/.test(normalizedBase)) return `${normalizedBase}/responses/compact`;
-	return `${normalizedBase}/codex/responses/compact`;
+/**
+ * Remote compaction is available for OpenAI models (direct or via LiteLLM).
+ * LiteLLM-discovered models have `provider: "litellm"` but their IDs indicate
+ * the underlying model family (e.g. "gpt-5.1", "o3-mini").
+ */
+function shouldUseOpenAiRemoteCompaction(model: Model): boolean {
+	if (model.provider === "openai" || /^openai\//.test(model.id)) return true;
+	if (model.provider === "litellm") {
+		const id = model.id.toLowerCase();
+		return id.startsWith("gpt-") || id.startsWith("o3") || id.startsWith("o4");
+	}
+	return false;
+}
+
+function resolveOpenAiCompactEndpoint(_model: Model): string {
+	return "https://api.openai.com/v1/responses/compact";
+}
+
+function normalizeOpenAiToolCallId(id: string): { callId: string; itemId: string } {
+	const [callId, itemId] = id.split("|");
+	if (callId && itemId) {
+		const normalizedCallId = truncateId(callId, getIdPrefix(callId, "call"));
+		const normalizedItemId = normalizeItemId(itemId);
+		return { callId: normalizedCallId, itemId: normalizedItemId };
+	}
+	const hash = Bun.hash(id).toString(36);
+	const normalizedCallId = id.startsWith("call_") ? truncateId(id, "call") : `call_${hash}`;
+	return { callId: normalizedCallId, itemId: `fc_${hash}` };
+}
+
+function getIdPrefix(id: string, fallback: string): string {
+	const prefix = id.match(/^([a-zA-Z][a-zA-Z0-9]*)_/)?.[1];
+	return prefix || fallback;
+}
+
+function normalizeItemId(itemId: string): string {
+	const prefix = getIdPrefix(itemId, "fc");
+	if (prefix !== "fc" && prefix !== "fcr") {
+		return `fc_${Bun.hash(itemId).toString(36)}`;
+	}
+	return truncateId(itemId, prefix);
+}
+
+function truncateId(id: string, prefix: string): string {
+	if (id.length <= 64) return id;
+	return `${prefix}_${Bun.hash(id).toString(36)}`;
 }
 
 function normalizeOpenAiCompactionToolCallId(id: string): string {
-	const normalized = normalizeResponsesToolCallId(id);
+	const normalized = normalizeOpenAiToolCallId(id);
 	return `${normalized.callId}|${normalized.itemId ?? normalized.callId}`;
 }
 
@@ -715,18 +749,9 @@ function buildOpenAiNativeHistory(
 	);
 
 	let msgIndex = 0;
-	let knownCallIds = collectKnownOpenAiCallIds(input);
+	const knownCallIds = collectKnownOpenAiCallIds(input);
 	for (const message of transformedMessages) {
 		if (message.role === "user" || message.role === "developer") {
-			const providerPayload = (message as { providerPayload?: AssistantMessage["providerPayload"] }).providerPayload;
-			const historyItems = getOpenAIResponsesHistoryItems(providerPayload, model.provider);
-			if (historyItems) {
-				input.push(...historyItems);
-				knownCallIds = collectKnownOpenAiCallIds(input);
-				msgIndex++;
-				continue;
-			}
-
 			const contentBlocks: Array<Record<string, unknown>> = [];
 			if (typeof message.content === "string") {
 				if (message.content.trim().length > 0) {
@@ -757,21 +782,6 @@ function buildOpenAiNativeHistory(
 
 		if (message.role === "assistant") {
 			const assistant = message as AssistantMessage;
-			const providerPayload = getOpenAIResponsesHistoryPayload(
-				assistant.providerPayload,
-				model.provider,
-				assistant.provider,
-			);
-			if (providerPayload) {
-				if (providerPayload.dt) {
-					input.push(...providerPayload.items);
-				} else {
-					input.splice(0, input.length, ...providerPayload.items);
-				}
-				knownCallIds = collectKnownOpenAiCallIds(input);
-				msgIndex++;
-				continue;
-			}
 			const isDifferentModel =
 				assistant.model !== model.id && assistant.provider === model.provider && assistant.api === model.api;
 
@@ -812,7 +822,7 @@ function buildOpenAiNativeHistory(
 				}
 
 				if (block.type === "toolCall") {
-					const normalized = normalizeResponsesToolCallId(block.id);
+					const normalized = normalizeOpenAiToolCallId(block.id);
 					let itemId: string | undefined = normalized.itemId;
 					if (isDifferentModel && (itemId?.startsWith("fc_") || itemId?.startsWith("fcr_"))) {
 						itemId = undefined;
@@ -833,7 +843,7 @@ function buildOpenAiNativeHistory(
 		}
 
 		if (message.role === "toolResult") {
-			const normalized = normalizeResponsesToolCallId(message.toolCallId);
+			const normalized = normalizeOpenAiToolCallId(message.toolCallId);
 			if (!knownCallIds.has(normalized.callId)) {
 				msgIndex++;
 				continue;
@@ -889,16 +899,6 @@ async function requestOpenAiRemoteCompaction(
 		Authorization: `Bearer ${apiKey}`,
 		...(model.headers ?? {}),
 	};
-
-	// Codex endpoints require additional auth headers
-	if (model.provider === "openai-codex") {
-		const accountId = getCodexAccountId(apiKey);
-		if (accountId) {
-			headers[OPENAI_HEADERS.ACCOUNT_ID] = accountId;
-		}
-		headers[OPENAI_HEADERS.BETA] = OPENAI_HEADER_VALUES.BETA_RESPONSES;
-		headers[OPENAI_HEADERS.ORIGINATOR] = OPENAI_HEADER_VALUES.ORIGINATOR_CODEX;
-	}
 
 	const response = await fetch(endpoint, {
 		method: "POST",

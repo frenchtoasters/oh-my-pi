@@ -1,13 +1,6 @@
 import * as os from "node:os";
 import * as path from "node:path";
-import { getAntigravityUserAgent, getEnvApiKey, type Model, StringEnum } from "@oh-my-pi/pi-ai";
-import {
-	CODEX_BASE_URL,
-	getCodexAccountId,
-	OPENAI_HEADER_VALUES,
-	OPENAI_HEADERS,
-	URL_PATHS,
-} from "@oh-my-pi/pi-ai/providers/openai-codex/constants";
+import { getEnvApiKey, type Model, StringEnum } from "@oh-my-pi/pi-ai";
 import {
 	$env,
 	isEnoent,
@@ -38,7 +31,7 @@ const ANTIGRAVITY_ENDPOINT = "https://daily-cloudcode-pa.sandbox.googleapis.com"
 const IMAGE_SYSTEM_INSTRUCTION =
 	"You are an AI image generator. Generate images based on user descriptions. Focus on creating high-quality, visually appealing images that match the user's request.";
 
-type ImageProvider = "antigravity" | "gemini" | "openai" | "openai-codex" | "openrouter";
+type ImageProvider = "antigravity" | "gemini" | "openai" | "openrouter";
 interface ImageApiKey {
 	provider: ImageProvider;
 	apiKey: string;
@@ -264,15 +257,6 @@ type OpenAIResponseOutput = OpenAIImageGenerationCall | OpenAIOutputMessage;
 interface OpenAIHostedImageResponse {
 	output?: OpenAIResponseOutput[];
 	usage?: OpenAIResponsesUsage;
-	error?: { code?: string; message?: string };
-}
-
-interface OpenAISseEvent {
-	type?: string;
-	item?: OpenAIResponseOutput;
-	response?: OpenAIHostedImageResponse;
-	code?: string;
-	message?: string;
 	error?: { code?: string; message?: string };
 }
 
@@ -639,14 +623,16 @@ function collectInlineImages(parts: GeminiPart[]): InlineImageData[] {
 
 function isOpenAIHostedImageModel(model: Model | undefined): model is Model {
 	if (!model) return false;
-	if (model.provider !== "openai" && model.provider !== "openai-codex") return false;
-	if (model.api !== "openai-responses" && model.api !== "openai-codex-responses") return false;
+	if (model.provider !== "openai" && model.provider !== "litellm") return false;
+	if (model.api !== "openai-completions") return false;
 	const modelId = model.id.toLowerCase();
-	return modelId.startsWith("gpt-") || modelId === "o3" || modelId.startsWith("o3-");
+	return (
+		modelId.startsWith("gpt-") || modelId.startsWith("o3") || modelId.startsWith("o4")
+	);
 }
 
-function getOpenAIHostedImageProvider(model: Model): ImageProvider {
-	return model.api === "openai-codex-responses" || model.provider === "openai-codex" ? "openai-codex" : "openai";
+function getOpenAIHostedImageProvider(_model: Model): ImageProvider {
+	return "openai";
 }
 
 function resolveOpenAIImageSize(aspectRatio: string | undefined, imageSize: string | undefined): string | undefined {
@@ -670,7 +656,6 @@ function buildOpenAIHostedImageRequest(
 	promptText: string,
 	params: ImageGenParams,
 	inputImages: InlineImageData[],
-	stream: boolean,
 ): OpenAIHostedImageRequest {
 	const content: OpenAIInputContent[] = [{ type: "input_text", text: promptText }];
 	for (const image of inputImages) {
@@ -691,13 +676,6 @@ function buildOpenAIHostedImageRequest(
 		tools: [tool],
 		tool_choice: { type: "image_generation" },
 		store: false,
-		...(stream
-			? {
-					instructions:
-						"You are an AI image generator. Generate images based on user descriptions. Focus on creating high-quality, visually appealing images that match the user's request.",
-				}
-			: {}),
-		...(stream ? { stream: true } : {}),
 	};
 }
 
@@ -751,78 +729,20 @@ function getOpenAIResponseErrorMessage(rawText: string): string {
 }
 
 function getOpenAIBaseUrl(model: Model): string {
-	const fallback =
-		model.api === "openai-codex-responses" || model.provider === "openai-codex"
-			? CODEX_BASE_URL
-			: DEFAULT_OPENAI_BASE_URL;
-	return (model.baseUrl || fallback).replace(/\/+$/, "");
+	return DEFAULT_OPENAI_BASE_URL;
 }
 
 function getOpenAIResponsesUrl(model: Model): string {
 	const baseUrl = getOpenAIBaseUrl(model);
-	if (model.api !== "openai-codex-responses" && model.provider !== "openai-codex") {
-		return `${baseUrl}/responses`;
-	}
-	const baseWithSlash = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
-	return new URL(URL_PATHS.RESPONSES.slice(1), baseWithSlash)
-		.toString()
-		.replace(URL_PATHS.RESPONSES, URL_PATHS.CODEX_RESPONSES);
+	return `${baseUrl}/responses`;
 }
 
-function buildOpenAIImageHeaders(model: Model, apiKey: string, sessionId: string | undefined): Headers {
+function buildOpenAIImageHeaders(model: Model, apiKey: string): Headers {
 	const headers = new Headers(model.headers ?? {});
 	headers.set("Content-Type", "application/json");
 	headers.set("Authorization", `Bearer ${apiKey}`);
-
-	if (model.api === "openai-codex-responses" || model.provider === "openai-codex") {
-		const accountId = getCodexAccountId(apiKey);
-		if (!accountId) {
-			throw new Error("Failed to extract accountId from OpenAI Codex token");
-		}
-		headers.delete("x-api-key");
-		headers.set(OPENAI_HEADERS.ACCOUNT_ID, accountId);
-		headers.set(OPENAI_HEADERS.BETA, OPENAI_HEADER_VALUES.BETA_RESPONSES);
-		headers.set(OPENAI_HEADERS.ORIGINATOR, OPENAI_HEADER_VALUES.ORIGINATOR_CODEX);
-		headers.set("User-Agent", `pi/${packageJson.version} (${os.platform()} ${os.release()}; ${os.arch()})`);
-		if (sessionId) {
-			headers.set(OPENAI_HEADERS.CONVERSATION_ID, sessionId);
-			headers.set(OPENAI_HEADERS.SESSION_ID, sessionId);
-		}
-	}
-
+	headers.set("User-Agent", `pi/${packageJson.version} (${os.platform()} ${os.release()}; ${os.arch()})`);
 	return headers;
-}
-
-async function parseOpenAIHostedImageSse(response: Response, signal?: AbortSignal): Promise<OpenAIHostedImageResult> {
-	if (!response.body) {
-		throw new Error("No response body");
-	}
-
-	const fallbackOutput: OpenAIResponseOutput[] = [];
-	let completedResponse: OpenAIHostedImageResponse | undefined;
-
-	for await (const event of readSseJson<OpenAISseEvent>(response.body, signal)) {
-		if (event.type === "error") {
-			const message = event.error?.message ?? event.message ?? "OpenAI image request failed";
-			throw new Error(message);
-		}
-		if (event.type === "response.failed") {
-			const message = event.response?.error?.message ?? "OpenAI image request failed";
-			throw new Error(message);
-		}
-		if (event.type === "response.output_item.done" && event.item) {
-			fallbackOutput.push(event.item);
-		}
-		if ((event.type === "response.completed" || event.type === "response.done") && event.response) {
-			completedResponse = event.response;
-		}
-	}
-
-	return collectOpenAIHostedImageResult(
-		completedResponse?.output?.length
-			? completedResponse
-			: { output: fallbackOutput, usage: completedResponse?.usage },
-	);
 }
 
 async function generateOpenAIHostedImage(
@@ -831,14 +751,12 @@ async function generateOpenAIHostedImage(
 	params: ImageGenParams,
 	inputImages: InlineImageData[],
 	signal: AbortSignal | undefined,
-	sessionId: string | undefined,
 ): Promise<OpenAIHostedImageResult> {
 	const promptText = assemblePrompt(params);
-	const stream = model.api === "openai-codex-responses" || model.provider === "openai-codex";
-	const requestBody = buildOpenAIHostedImageRequest(model, promptText, params, inputImages, stream);
+	const requestBody = buildOpenAIHostedImageRequest(model, promptText, params, inputImages);
 	const response = await fetch(getOpenAIResponsesUrl(model), {
 		method: "POST",
-		headers: buildOpenAIImageHeaders(model, apiKey, sessionId),
+		headers: buildOpenAIImageHeaders(model, apiKey),
 		body: JSON.stringify(requestBody),
 		signal,
 	});
@@ -846,11 +764,6 @@ async function generateOpenAIHostedImage(
 	if (!response.ok) {
 		const errorText = await response.text();
 		throw new Error(`OpenAI image request failed (${response.status}): ${getOpenAIResponseErrorMessage(errorText)}`);
-	}
-
-	const contentType = response.headers.get("content-type") ?? "";
-	if (stream || contentType.includes("text/event-stream")) {
-		return parseOpenAIHostedImageSse(response, signal);
 	}
 
 	const data = (await response.json()) as OpenAIHostedImageResponse;
@@ -959,13 +872,13 @@ export const imageGenTool: CustomTool<typeof imageGenSchema, ImageGenToolDetails
 			const apiKey = await findImageApiKey(ctx.modelRegistry, ctx.model, sessionId);
 			if (!apiKey) {
 				throw new Error(
-					"No image API credentials found. Use a GPT Responses/Codex model with OpenAI credentials, login with google-antigravity, or set OPENROUTER_API_KEY, GEMINI_API_KEY, or GOOGLE_API_KEY.",
+					"No image API credentials found. Use a GPT model with OpenAI credentials, login with google-antigravity, or set OPENROUTER_API_KEY, GEMINI_API_KEY, or GOOGLE_API_KEY.",
 				);
 			}
 
 			const provider = apiKey.provider;
 			const model =
-				provider === "openai" || provider === "openai-codex"
+				provider === "openai"
 					? (apiKey.model?.id ?? "gpt")
 					: provider === "antigravity"
 						? DEFAULT_ANTIGRAVITY_MODEL
@@ -984,7 +897,7 @@ export const imageGenTool: CustomTool<typeof imageGenSchema, ImageGenToolDetails
 
 			const requestSignal = ptree.combineSignals(signal, IMAGE_TIMEOUT);
 
-			if (provider === "openai" || provider === "openai-codex") {
+			if (provider === "openai") {
 				if (!apiKey.model) {
 					throw new Error("Missing active GPT model for OpenAI image generation");
 				}
@@ -995,7 +908,6 @@ export const imageGenTool: CustomTool<typeof imageGenSchema, ImageGenToolDetails
 					params,
 					resolvedImages,
 					requestSignal,
-					sessionId,
 				);
 
 				if (parsed.images.length === 0) {
@@ -1055,7 +967,7 @@ export const imageGenTool: CustomTool<typeof imageGenSchema, ImageGenToolDetails
 						Authorization: `Bearer ${apiKey.apiKey}`,
 						"Content-Type": "application/json",
 						Accept: "text/event-stream",
-						"User-Agent": getAntigravityUserAgent(),
+						"User-Agent": "oh-my-pi/image-gen",
 					},
 					body: JSON.stringify(requestBody),
 					signal: requestSignal,

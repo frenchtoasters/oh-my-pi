@@ -5134,6 +5134,8 @@ export class AgentSession {
 					content: this.#normalizeProviderReplayValue(message.content),
 				};
 			case "assistant": {
+			// Legacy: retained for backward-compatible replay of historical session messages
+			// that were created by the now-removed openai-responses/openai-codex-responses providers.
 				const isResponsesFamilyMessage =
 					message.api === "openai-responses" || message.api === "openai-codex-responses";
 				return {

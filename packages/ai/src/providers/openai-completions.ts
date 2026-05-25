@@ -36,7 +36,6 @@ import {
 import { normalizeSystemPrompts } from "../utils";
 import { createAbortSourceTracker } from "../utils/abort";
 import { AssistantMessageEventStream } from "../utils/event-stream";
-import { toFireworksWireModelId } from "../utils/fireworks-model-id";
 import {
 	type CapturedHttpErrorResponse,
 	finalizeErrorMessage,
@@ -430,11 +429,11 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions"> = (
 			if (copilotPremiumRequests !== undefined) output.usage.premiumRequests = copilotPremiumRequests;
 			stream.push({ type: "start", partial: output });
 
-			const parseMiniMaxThinkTags = model.provider === "minimax-code";
+			const parseMiniMaxThinkTags = model.provider === "minimax-code" || model.provider === "minimax-abab";
 			// NVIDIA NIM and similar OpenAI-compatible hosts return DeepSeek's chat-template
 			// tool-call markers in `delta.content` even though tool calls are also surfaced
 			// structurally. Strip the leaked markers so users don't see raw `<｜...｜>` tokens.
-			const stripDeepseekChatTemplateTokens = model.provider === "nvidia" && /deepseek/i.test(model.id);
+			const stripDeepseekChatTemplateTokens = (model.provider === "nvidia" || (model.baseUrl?.includes("nvidia"))) && /deepseek/i.test(model.id);
 			type OpenAIStreamBlock = TextContent | ThinkingContent | (ToolCall & { partialArgs: string });
 			let currentBlock: OpenAIStreamBlock | undefined;
 			const blockIndex = (block: OpenAIStreamBlock | undefined): number => {
@@ -891,15 +890,13 @@ function buildParams(
 	const compat = getCompat(model, resolvedBaseUrl);
 	const messages = convertMessages(model, context, compat);
 	maybeAddAnthropicCacheControl(model, messages);
-	const supportsReasoningParams = model.provider !== "github-copilot";
-
 	// Kimi (including via OpenRouter) calculates TPM rate limits based on max_tokens, not actual output.
 	// Always send max_tokens to avoid their high default causing rate limit issues.
 	// Note: Direct kimi-code provider is handled by the dedicated Kimi provider in kimi.ts.
 	const isKimi = model.id.includes("moonshotai/kimi");
 	const effectiveMaxTokens = options?.maxTokens ?? (isKimi ? model.maxTokens : undefined);
 
-	const requestModelId = model.provider === "fireworks" ? toFireworksWireModelId(model.id) : model.id;
+	const requestModelId = model.id;
 	const params: OpenAICompletionsParams = {
 		model: requestModelId,
 		messages,
@@ -976,19 +973,19 @@ function buildParams(
 		delete params.tool_choice;
 	}
 
-	if (supportsReasoningParams && compat.thinkingFormat === "zai" && model.reasoning) {
+	if (compat.thinkingFormat === "zai" && model.reasoning) {
 		// Z.ai uses binary thinking: { type: "enabled" | "disabled" }
 		// Must explicitly disable since z.ai defaults to thinking enabled.
 		const enabled = options?.reasoning && !options?.disableReasoning;
 		params.thinking = { type: enabled ? "enabled" : "disabled" };
-	} else if (supportsReasoningParams && compat.thinkingFormat === "qwen" && model.reasoning) {
+	} else if (compat.thinkingFormat === "qwen" && model.reasoning) {
 		// Qwen uses top-level enable_thinking: boolean
 		params.enable_thinking = !!options?.reasoning && !options?.disableReasoning;
-	} else if (supportsReasoningParams && compat.thinkingFormat === "qwen-chat-template" && model.reasoning) {
+	} else if (compat.thinkingFormat === "qwen-chat-template" && model.reasoning) {
 		params.chat_template_kwargs = {
 			enable_thinking: !!options?.reasoning && !options?.disableReasoning,
 		};
-	} else if (supportsReasoningParams && compat.thinkingFormat === "openrouter" && model.reasoning) {
+	} else if (compat.thinkingFormat === "openrouter" && model.reasoning) {
 		// OpenRouter normalizes reasoning across providers via a nested reasoning object.
 		// Without an explicit signal, OpenRouter defaults reasoning models to thinking, which
 		// silently consumes the entire output budget on small `max_tokens` requests (e.g.
@@ -1004,7 +1001,7 @@ function buildParams(
 			};
 		}
 	} else if (
-		supportsReasoningParams &&
+		compat.thinkingFormat === "anthropic-extended-thinking" &&
 		options?.reasoning &&
 		!options?.disableReasoning &&
 		model.reasoning &&
