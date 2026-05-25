@@ -40,7 +40,6 @@ import {
 	type CapturedHttpErrorResponse,
 	finalizeErrorMessage,
 	type RawHttpRequestDump,
-	rewriteCopilotError,
 } from "../utils/http-inspector";
 import {
 	createWatchdog,
@@ -49,17 +48,11 @@ import {
 	iterateWithIdleTimeout,
 } from "../utils/idle-iterator";
 import { parseStreamingJson } from "../utils/json-parse";
-import { parseGitHubCopilotApiKey } from "../utils/oauth/github-copilot";
-import { getKimiCommonHeaders } from "../utils/oauth/kimi";
+import { extractHttpStatusFromError } from "../utils/retry";
 import { notifyProviderResponse } from "../utils/provider-response";
-import { callWithCopilotModelRetry, extractHttpStatusFromError } from "../utils/retry";
 import { adaptSchemaForStrict, NO_STRICT } from "../utils/schema";
 import { isForcedToolChoice, mapToOpenAICompletionsToolChoice } from "../utils/tool-choice";
-import {
-	buildCopilotDynamicHeaders,
-	hasCopilotVisionInput,
-	resolveGitHubCopilotBaseUrl,
-} from "./github-copilot-headers";
+
 import { detectOpenAICompat, type ResolvedOpenAICompat, resolveOpenAICompat } from "./openai-completions-compat";
 import { transformMessages } from "./transform-messages";
 
@@ -353,7 +346,7 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions"> = (
 			const idleTimeoutMs = getOpenAIStreamIdleTimeoutMs();
 			const {
 				client,
-				copilotPremiumRequests,
+
 				baseUrl,
 				requestHeaders,
 				getCapturedErrorResponse: captureErrorResponse,
@@ -397,10 +390,7 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions"> = (
 			};
 			let openaiStream: AsyncIterable<ChatCompletionChunk>;
 			try {
-				openaiStream = await callWithCopilotModelRetry(() => createCompletionsStream(), {
-					provider: model.provider,
-					signal: requestSignal,
-				});
+				openaiStream = await createCompletionsStream();
 			} catch (error) {
 				const capturedErrorResponse = getCapturedErrorResponse();
 				if (
@@ -426,7 +416,7 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions"> = (
 				options?.streamFirstEventTimeoutMs ?? getStreamFirstEventTimeoutMs(idleTimeoutMs),
 				() => abortTracker.abortLocally(firstEventTimeoutAbortError),
 			);
-			if (copilotPremiumRequests !== undefined) output.usage.premiumRequests = copilotPremiumRequests;
+
 			stream.push({ type: "start", partial: output });
 
 			const parseMiniMaxThinkTags = model.provider === "minimax-code" || model.provider === "minimax-abab";
@@ -584,7 +574,7 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions"> = (
 				output.responseId ||= chunk.id;
 
 				if (chunk.usage) {
-					output.usage = parseChunkUsage(chunk.usage, model, copilotPremiumRequests);
+					output.usage = parseChunkUsage(chunk.usage, model);
 				}
 
 				const choice = Array.isArray(chunk.choices) ? chunk.choices[0] : undefined;
@@ -593,7 +583,7 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions"> = (
 				if (!chunk.usage) {
 					const choiceUsage = getChoiceUsage(choice);
 					if (choiceUsage) {
-						output.usage = parseChunkUsage(choiceUsage, model, copilotPremiumRequests);
+						output.usage = parseChunkUsage(choiceUsage, model);
 					}
 				}
 
@@ -747,7 +737,6 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions"> = (
 			// Some providers via OpenRouter include extra details here.
 			const rawMetadata = (error as { error?: { metadata?: { raw?: string } } })?.error?.metadata?.raw;
 			if (rawMetadata) output.errorMessage += `\n${rawMetadata}`;
-			output.errorMessage = rewriteCopilotError(output.errorMessage, error, model.provider);
 			output.duration = Date.now() - startTime;
 			if (firstTokenTime) output.ttft = firstTokenTime - startTime;
 			stream.push({ type: "error", reason: output.stopReason, error: output });
@@ -766,7 +755,7 @@ async function createClient(
 	initiatorOverride?: MessageAttribution,
 ): Promise<{
 	client: OpenAI;
-	copilotPremiumRequests: number | undefined;
+
 	baseUrl: string | undefined;
 	requestHeaders: Record<string, string>;
 	getCapturedErrorResponse: () => CapturedHttpErrorResponse | undefined;
@@ -802,26 +791,7 @@ async function createClient(
 		headers["X-OpenRouter-Cache-TTL"] = "3600";
 	}
 	Object.assign(headers, extraHeaders);
-	if (model.provider === "kimi-code") {
-		headers = { ...getKimiCommonHeaders(), ...headers };
-	}
-	let copilotPremiumRequests: number | undefined;
-
 	let baseUrl = model.baseUrl;
-	if (model.provider === "github-copilot") {
-		apiKey = parseGitHubCopilotApiKey(rawApiKey).accessToken;
-		const hasImages = hasCopilotVisionInput(context.messages);
-		const copilot = buildCopilotDynamicHeaders({
-			messages: context.messages,
-			hasImages,
-			premiumMultiplier: model.premiumMultiplier,
-			headers,
-			initiatorOverride,
-		});
-		Object.assign(headers, copilot.headers);
-		copilotPremiumRequests = copilot.premiumRequests;
-		baseUrl = resolveGitHubCopilotBaseUrl(model.baseUrl, rawApiKey) ?? model.baseUrl;
-	}
 	// Azure OpenAI requires /deployments/{id}/chat/completions?api-version=YYYY-MM-DD.
 	// The generic openai-completions path adds neither, producing silent 404s.
 	let azureDefaultQuery: Record<string, string> | undefined;
@@ -870,7 +840,7 @@ async function createClient(
 			defaultQuery: azureDefaultQuery,
 			fetch: wrappedFetch,
 		}),
-		copilotPremiumRequests,
+
 		baseUrl,
 		requestHeaders: headers,
 		getCapturedErrorResponse: () => capturedErrorResponse,
@@ -1068,7 +1038,7 @@ function getChoiceUsage(choice: ChatCompletionChunk.Choice): object | undefined 
 export function parseChunkUsage(
 	rawUsage: object,
 	model: Model<"openai-completions">,
-	copilotPremiumRequests: number | undefined,
+
 ): AssistantMessage["usage"] {
 	const promptTokenDetails = getOptionalObjectProperty(rawUsage, "prompt_tokens_details");
 	const completionTokenDetails = getOptionalObjectProperty(rawUsage, "completion_tokens_details");
@@ -1099,7 +1069,7 @@ export function parseChunkUsage(
 		totalTokens: input + outputTokens + cachedTokens + cacheWriteTokens,
 		...(reasoningTokens > 0 ? { reasoningTokens } : {}),
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-		...(copilotPremiumRequests !== undefined ? { premiumRequests: copilotPremiumRequests } : {}),
+
 	};
 	calculateCost(model, usage);
 	return usage;
