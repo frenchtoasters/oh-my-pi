@@ -7,7 +7,6 @@ import { BashExecutionComponent } from "../../modes/components/bash-execution";
 import { BranchSummaryMessageComponent } from "../../modes/components/branch-summary-message";
 import { CompactionSummaryMessageComponent } from "../../modes/components/compaction-summary-message";
 import { CustomMessageComponent } from "../../modes/components/custom-message";
-import { DynamicBorder } from "../../modes/components/dynamic-border";
 import { EvalExecutionComponent } from "../../modes/components/eval-execution";
 import { ReadToolGroupComponent } from "../../modes/components/read-tool-group";
 import { SkillMessageComponent } from "../../modes/components/skill-message";
@@ -470,23 +469,6 @@ export class UiHelpers {
 		}
 		this.ctx.chatContainer.addChild(new Spacer(1));
 		this.ctx.chatContainer.addChild(new Text(theme.fg("warning", `Warning: ${warningMessage}`), 1, 0));
-		this.ctx.ui.requestRender();
-	}
-
-	showNewVersionNotification(newVersion: string): void {
-		this.ctx.chatContainer.addChild(new Spacer(1));
-		this.ctx.chatContainer.addChild(new DynamicBorder(text => theme.fg("warning", text)));
-		this.ctx.chatContainer.addChild(
-			new Text(
-				theme.bold(theme.fg("warning", "Update Available")) +
-					"\n" +
-					theme.fg("muted", `New version ${newVersion} is available. Run: `) +
-					theme.fg("accent", "omp update"),
-				1,
-				0,
-			),
-		);
-		this.ctx.chatContainer.addChild(new DynamicBorder(text => theme.fg("warning", text)));
 		this.ctx.ui.requestRender();
 	}
 

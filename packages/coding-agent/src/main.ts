@@ -57,27 +57,6 @@ import type { LspStartupServerInfo } from "./tools";
 import { getChangelogPath, getNewEntries, parseChangelog } from "./utils/changelog";
 import type { EventBus } from "./utils/event-bus";
 
-async function checkForNewVersion(currentVersion: string): Promise<string | undefined> {
-	if (!settings.get("startup.checkUpdate")) {
-		return;
-	}
-	try {
-		const response = await fetch("https://registry.npmjs.org/@oh-my-pi/pi-coding-agent/latest");
-		if (!response.ok) return undefined;
-
-		const data = (await response.json()) as { version?: string };
-		const latestVersion = data.version;
-
-		if (latestVersion && Bun.semver.order(latestVersion, currentVersion) > 0) {
-			return latestVersion;
-		}
-
-		return undefined;
-	} catch {
-		return undefined;
-	}
-}
-
 const RPC_DEFAULTED_SETTING_PATHS: SettingPath[] = [
 	"todo.enabled",
 	"todo.reminders",
@@ -152,7 +131,6 @@ async function runInteractiveMode(
 	version: string,
 	changelogMarkdown: string | undefined,
 	notifs: (InteractiveModeNotify | null)[],
-	versionCheckPromise: Promise<string | undefined>,
 	initialMessages: string[],
 	setExtensionUIContext: (uiContext: ExtensionUIContext, hasUI: boolean) => void,
 	lspServers: LspStartupServerInfo[] | undefined,
@@ -172,17 +150,6 @@ async function runInteractiveMode(
 	);
 
 	await mode.init();
-
-	versionCheckPromise
-		.then(newVersion => {
-			if (!settings.get("startup.checkUpdate")) {
-				return;
-			}
-			if (newVersion) {
-				mode.showNewVersionNotification(newVersion);
-			}
-		})
-		.catch(() => {});
 
 	mode.renderInitialMessages();
 
@@ -884,7 +851,6 @@ export async function runRootCommand(parsed: Args, rawArgs: string[]): Promise<v
 	} else if (mode === "acp") {
 		await runAcpMode(session, createAcpSession);
 	} else if (isInteractive) {
-		const versionCheckPromise = checkForNewVersion(VERSION).catch(() => undefined);
 		const changelogMarkdown = await logger.time("main:getChangelogForDisplay", getChangelogForDisplay, parsedArgs);
 
 		const scopedModelsForDisplay = sessionOptions.scopedModels ?? scopedModels;
@@ -911,7 +877,6 @@ export async function runRootCommand(parsed: Args, rawArgs: string[]): Promise<v
 			VERSION,
 			changelogMarkdown,
 			notifs,
-			versionCheckPromise,
 			parsedArgs.messages,
 			setToolUIContext,
 			lspServers,

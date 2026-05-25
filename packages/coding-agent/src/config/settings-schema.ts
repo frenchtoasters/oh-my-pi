@@ -854,16 +854,6 @@ export const SETTINGS_SCHEMA = {
 		},
 	},
 
-	"startup.checkUpdate": {
-		type: "boolean",
-		default: true,
-		ui: {
-			tab: "interaction",
-			label: "Check for Updates",
-			description: "If false, skip update check",
-		},
-	},
-
 	collapseChangelog: {
 		type: "boolean",
 		default: false,
