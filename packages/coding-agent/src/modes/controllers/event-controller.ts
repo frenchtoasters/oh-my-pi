@@ -51,7 +51,6 @@ export class EventController {
 			retry_fallback_succeeded: e => this.#handleRetryFallbackSucceeded(e),
 			ttsr_triggered: e => this.#handleTtsrTriggered(e),
 			todo_reminder: e => this.#handleTodoReminder(e),
-			todo_auto_clear: e => this.#handleTodoAutoClear(e),
 			irc_message: e => this.#handleIrcMessage(e),
 			notice: e => this.#handleNotice(e),
 		} satisfies AgentSessionEventHandlers;
@@ -641,9 +640,6 @@ export class EventController {
 		this.ctx.ui.requestRender();
 	}
 
-	async #handleTodoAutoClear(_event: Extract<AgentSessionEvent, { type: "todo_auto_clear" }>): Promise<void> {
-		await this.ctx.reloadTodos();
-	}
 
 	#cancelIdleCompaction(): void {
 		if (this.#idleCompactionTimer) {

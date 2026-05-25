@@ -403,8 +403,39 @@ function formatRetryFallbackBaseSelector(selector: RetryFallbackSelector): strin
 	return `${selector.provider}/${selector.id}`;
 }
 
+const IRC_REPLY_MAX_BYTES = 4096;
 
-
+/**
+ * Collapse degenerate IRC ephemeral replies before they hit the relay.
+ * Models occasionally loop on a single line; compress runs longer than 3
+ * down to one instance + `[…N×]`, then cap at 4 KiB.
+ */
+function dedupeIrcReply(text: string): string {
+	if (!text) return text;
+	const lines = text.split("\n");
+	const out: string[] = [];
+	let i = 0;
+	while (i < lines.length) {
+		let j = i + 1;
+		while (j < lines.length && lines[j] === lines[i]) j++;
+		const runLen = j - i;
+		if (runLen > 3) {
+			out.push(lines[i], `[…${runLen}×]`);
+		} else {
+			for (let k = 0; k < runLen; k++) out.push(lines[i]);
+		}
+		i = j;
+	}
+	let result = out.join("\n");
+	if (Buffer.byteLength(result, "utf8") > IRC_REPLY_MAX_BYTES) {
+		const suffix = "\n[…truncated]";
+		const budget = IRC_REPLY_MAX_BYTES - Buffer.byteLength(suffix, "utf8");
+		while (Buffer.byteLength(result, "utf8") > budget) {
+			result = result.slice(0, -1);
+		}
+		result += suffix;
+	}
+	return result;
 }
 
 const noOpUIContext: ExtensionUIContext = {
@@ -4268,7 +4299,6 @@ export class AgentSession {
 		const sessionContext = this.buildDisplaySessionContext();
 		this.agent.replaceMessages(sessionContext.messages);
 		this.#syncTodoPhasesFromBranch();
-		this.#closeCodexProviderSessionsForHistoryRewrite();
 		return result;
 	}
 
@@ -4409,7 +4439,6 @@ export class AgentSession {
 			this.#frozenBeforeIndex = this.agent.state.messages.length;
 			this.#recomputePruneState();
 			this.#syncTodoPhasesFromBranch();
-			this.#closeCodexProviderSessionsForHistoryRewrite();
 
 			// Get the saved compaction entry for the hook
 			const savedCompactionEntry = newEntries.find(e => e.type === "compaction" && e.summary === summary) as
@@ -5078,39 +5107,10 @@ export class AgentSession {
 		this.agent.setModel(model);
 	}
 
-	#closeCodexProviderSessionsForHistoryRewrite(): void {
-		const currentModel = this.model;
-		if (!currentModel || currentModel.api !== "openai-codex-responses") return;
-		this.#closeProviderSessionsForModelSwitch(currentModel, currentModel);
-	}
-
-	#closeProviderSessionsForModelSwitch(currentModel: Model, nextModel: Model): void {
-		const providerKeys = new Set<string>();
-		if (currentModel.api === "openai-codex-responses" || nextModel.api === "openai-codex-responses") {
-			providerKeys.add("openai-codex-responses");
-		}
-		if (currentModel.api === "openai-responses") {
-			providerKeys.add(`openai-responses:${currentModel.provider}`);
-		}
-		if (nextModel.api === "openai-responses") {
-			providerKeys.add(`openai-responses:${nextModel.provider}`);
-		}
-
-		for (const providerKey of providerKeys) {
-			const state = this.#providerSessionState.get(providerKey);
-			if (!state) continue;
-
-			try {
-				state.close();
-			} catch (error) {
-				logger.warn("Failed to close provider session state during model switch", {
-					providerKey,
-					error: String(error),
-				});
-			}
-
-			this.#providerSessionState.delete(providerKey);
-		}
+	#closeProviderSessionsForModelSwitch(_currentModel: Model, _nextModel: Model): void {
+		// All provider-specific session state (openai-responses, openai-codex-responses) was removed
+		// in the LiteLLM consolidation. This is retained as an extension point for future
+		// provider session state that requires cleanup on model switch.
 	}
 
 	#normalizeProviderReplayValue(value: unknown): unknown {
@@ -5132,7 +5132,6 @@ export class AgentSession {
 				return {
 					role: message.role,
 					content: this.#normalizeProviderReplayValue(message.content),
-					providerPayload: message.providerPayload,
 				};
 			case "assistant": {
 				const isResponsesFamilyMessage =
@@ -5166,7 +5165,6 @@ export class AgentSession {
 					model: message.model,
 					stopReason: message.stopReason,
 					errorMessage: message.errorMessage,
-					providerPayload: isResponsesFamilyMessage ? undefined : message.providerPayload,
 				};
 			}
 			case "toolResult":
@@ -5232,7 +5230,6 @@ export class AgentSession {
 				return {
 					role: message.role,
 					summary: message.summary,
-					providerPayload: message.providerPayload,
 				};
 			case "fileMention":
 				return {
@@ -5650,7 +5647,6 @@ export class AgentSession {
 			this.#frozenBeforeIndex = this.agent.state.messages.length;
 			this.#recomputePruneState();
 			this.#syncTodoPhasesFromBranch();
-			this.#closeCodexProviderSessionsForHistoryRewrite();
 
 			// Get the saved compaction entry for the hook
 			const savedCompactionEntry = newEntries.find(e => e.type === "compaction" && e.summary === summary) as
@@ -7080,7 +7076,6 @@ export class AgentSession {
 
 		if (!skipConversationRestore) {
 			this.agent.replaceMessages(sessionContext.messages);
-			this.#closeCodexProviderSessionsForHistoryRewrite();
 		}
 
 		return { selectedText, cancelled: false };
@@ -7244,7 +7239,6 @@ export class AgentSession {
 		await this.#restoreMCPSelectionsForSessionContext(displayContext);
 		this.agent.replaceMessages(displayContext.messages);
 		this.#syncTodoPhasesFromBranch();
-		this.#closeCodexProviderSessionsForHistoryRewrite();
 
 		this.#branchSummaryAbortController = undefined;
 

@@ -176,8 +176,7 @@ export function mapAgentSessionEventToAcpSessionUpdates(
 			}));
 			return [toSessionNotification(sessionId, { sessionUpdate: "plan", entries })];
 		}
-		case "todo_auto_clear":
-			return [toSessionNotification(sessionId, { sessionUpdate: "plan", entries: [] })];
+		// todo_auto_clear was removed — tasks survive until explicit rm/drop
 		default:
 			return [];
 	}

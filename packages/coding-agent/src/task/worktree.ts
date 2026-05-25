@@ -3,7 +3,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { projfsOverlayStart, projfsOverlayStop } from "@oh-my-pi/pi-natives";
-import { $which, getWorktreeDir, isEnoent, logger, Snowflake } from "@oh-my-pi/pi-utils";
+import { $which, getWorktreeDir, hashPath, isEnoent, logger, Snowflake } from "@oh-my-pi/pi-utils";
 import { $ } from "bun";
 import * as git from "../utils/git";
 
@@ -43,10 +43,14 @@ export function getGitNoIndexNullPath(): string {
 	return GIT_NO_INDEX_NULL_PATH;
 }
 
+export function getEncodedProjectName(cwd: string): string {
+	return `--${cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
+}
+
 export async function ensureWorktree(baseCwd: string, id: string): Promise<string> {
 	const repoRoot = await getRepoRoot(baseCwd);
 	const encodedProject = getEncodedProjectName(repoRoot);
-	const worktreeDir = getWorktreeDir(encodedProject, id);
+	const worktreeDir = getWorktreeDir(path.join(encodedProject, id));
 	await fs.mkdir(path.dirname(worktreeDir), { recursive: true });
 	await git.worktree.tryRemove(repoRoot, worktreeDir);
 	await fs.rm(worktreeDir, { recursive: true, force: true });
@@ -338,7 +342,7 @@ export async function ensureFuseOverlay(baseCwd: string, id: string): Promise<st
 
 	const repoRoot = await getRepoRoot(baseCwd);
 	const encodedProject = getEncodedProjectName(repoRoot);
-	const baseDir = getWorktreeDir(encodedProject, id);
+	const baseDir = getWorktreeDir(path.join(encodedProject, id));
 	const upperDir = path.join(baseDir, "upper");
 	const workDir = path.join(baseDir, "work");
 	const mergedDir = path.join(baseDir, "merged");

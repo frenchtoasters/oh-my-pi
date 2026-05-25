@@ -67,7 +67,7 @@ function assistantWithToolCall(): AssistantMessage {
 			totalTokens: 0,
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 		},
-		stopReason: "tool_use",
+		stopReason: "toolUse",
 		timestamp: Date.now(),
 	};
 }
@@ -75,7 +75,7 @@ function assistantWithToolCall(): AssistantMessage {
 const echoTool: Tool = {
 	name: "echo",
 	description: "Echo input",
-	parameters: z.object({ text: z.string() }),
+	parameters: z.object({ text: z.string() }) as any,
 };
 
 describe("issue #1227 — /btw fails on LiteLLM→Bedrock with tool history", () => {

@@ -19,7 +19,6 @@ function createCtx(usage: Partial<SegmentContext["usageStats"]>): SegmentContext
 		options: {},
 		planMode: null,
 		loopMode: null,
-		goalMode: null,
 		usageStats: {
 			input: 0,
 			output: 0,
@@ -40,7 +39,6 @@ function createCtx(usage: Partial<SegmentContext["usageStats"]>): SegmentContext
 			status: null,
 			pr: null,
 		},
-		usage: null,
 	};
 }
 

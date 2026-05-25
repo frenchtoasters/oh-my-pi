@@ -2,7 +2,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "bun:
 import * as path from "node:path";
 import { Agent } from "@oh-my-pi/pi-agent-core";
 import { ModelRegistry } from "@oh-my-pi/pi-coding-agent/config/model-registry";
-import { resetSettingsForTest, Settings, settings } from "@oh-my-pi/pi-coding-agent/config/settings";
+import { _resetSettingsForTest, Settings, settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import { InteractiveMode } from "@oh-my-pi/pi-coding-agent/modes/interactive-mode";
 import { initTheme } from "@oh-my-pi/pi-coding-agent/modes/theme/theme";
 import type { SubmittedUserInput } from "@oh-my-pi/pi-coding-agent/modes/types";
@@ -28,7 +28,7 @@ describe("InteractiveMode loop auto-submit", () => {
 	});
 
 	beforeEach(async () => {
-		resetSettingsForTest();
+		_resetSettingsForTest();
 		tempDir = TempDir.createSync("@pi-loop-auto-submit-");
 		await Settings.init({ inMemory: true, cwd: tempDir.path() });
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "testauth.db"));
@@ -43,20 +43,20 @@ describe("InteractiveMode loop auto-submit", () => {
 			modelRegistry,
 		});
 		mode = new InteractiveMode(session, "test");
-		vi.spyOn(mode, "addMessageToChat").mockReturnValue([]);
+		vi.spyOn(mode, "addMessageToChat").mockReturnValue(undefined as any);
 		vi.spyOn(mode, "ensureLoadingAnimation").mockImplementation(() => {});
 		mode.ui.requestRender = vi.fn();
 	});
 
 	afterEach(async () => {
-		mode?.disableLoopMode("Loop mode disabled.");
+		mode?.disableLoopMode();
 		mode?.stop();
 		vi.useRealTimers();
 		vi.restoreAllMocks();
 		await session?.dispose();
 		authStorage?.close();
 		tempDir?.removeSync();
-		resetSettingsForTest();
+		_resetSettingsForTest();
 	});
 
 	it("does not resolve the next loop prompt while compaction is running", async () => {
@@ -90,7 +90,6 @@ describe("InteractiveMode loop auto-submit", () => {
 		Object.defineProperty(session, "isStreaming", { configurable: true, get: () => streaming });
 		const compact = vi.spyOn(mode, "handleCompactCommand").mockImplementation(async () => {
 			streaming = true;
-			return "ok";
 		});
 
 		mode.loopModeEnabled = true;
