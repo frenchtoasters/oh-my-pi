@@ -45,6 +45,8 @@
 	},
 	"dependencies": {
 		"@agentclientprotocol/sdk": "catalog:",
+		"@slack/socket-mode": "catalog:",
+		"@slack/web-api": "catalog:",
 		"@anthropic-ai/tokenizer": "0.0.4",
 		"@mozilla/readability": "catalog:",
 		"@oh-my-pi/omp-stats": "catalog:",

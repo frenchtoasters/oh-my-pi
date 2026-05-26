@@ -385,7 +385,7 @@ export const SETTINGS_SCHEMA = {
 	},
 	"tools.artifactSpillThreshold": {
 		type: "number",
-		default: 30,
+		default: 20,
 		ui: {
 			tab: "tools",
 			label: "Artifact spill threshold (KB)",
@@ -541,7 +541,7 @@ export const SETTINGS_SCHEMA = {
 	defaultThinkingLevel: {
 		type: "enum",
 		values: THINKING_EFFORTS,
-		default: "high",
+		default: "medium",
 		ui: {
 			tab: "model",
 			label: "Thinking Level",
@@ -1050,7 +1050,7 @@ export const SETTINGS_SCHEMA = {
 
 	"compaction.iterationThreshold": {
 		type: "number",
-		default: 15,
+		default: 10,
 		ui: {
 			tab: "context",
 			label: "Iteration Compaction Threshold",
@@ -1080,7 +1080,7 @@ export const SETTINGS_SCHEMA = {
 
 	"compaction.idleThresholdTokens": {
 		type: "number",
-		default: 100000,
+		default: 60000,
 		ui: {
 			tab: "context",
 			label: "Idle Compaction Threshold",
@@ -1481,7 +1481,7 @@ export const SETTINGS_SCHEMA = {
 
 	"read.defaultLimit": {
 		type: "number",
-		default: 300,
+		default: 200,
 		ui: {
 			tab: "editing",
 			label: "Default Read Limit",
@@ -2499,7 +2499,7 @@ export const SETTINGS_SCHEMA = {
 
 	"thinkingBudgets.medium": { type: "number", default: 8192 },
 
-	"thinkingBudgets.high": { type: "number", default: 16384 },
+	"thinkingBudgets.high": { type: "number", default: 12288 },
 
 	"thinkingBudgets.xhigh": { type: "number", default: 32768 },
 
@@ -2587,6 +2587,45 @@ export const SETTINGS_SCHEMA = {
 			tab: "security",
 			label: "Sandbox Profile Overrides",
 			description: "Per-agent sandbox profile overrides. Keys are agent names, values are SandboxProfile objects.",
+		},
+	},
+
+	// Slack bridge
+	"slack.enabled": {
+		type: "boolean",
+		default: false,
+		ui: {
+			tab: "tools",
+			label: "Slack Bridge",
+			description: "Enable the Slack remote control bridge for driving the session from a Slack channel",
+		},
+	},
+	"slack.appToken": {
+		type: "string",
+		default: undefined,
+		ui: {
+			tab: "tools",
+			label: "Slack App Token",
+			description:
+				"App-level token (xapp-*) for Socket Mode connection. Can also be set via SLACK_APP_TOKEN env var.",
+		},
+	},
+	"slack.botToken": {
+		type: "string",
+		default: undefined,
+		ui: {
+			tab: "tools",
+			label: "Slack Bot Token",
+			description: "Bot OAuth token (xoxb-*) for Web API. Can also be set via SLACK_BOT_TOKEN env var.",
+		},
+	},
+	"slack.channelId": {
+		type: "string",
+		default: undefined,
+		ui: {
+			tab: "tools",
+			label: "Slack Channel ID",
+			description: "Channel ID to bind the Slack bridge to. Can also be set via SLACK_CHANNEL_ID env var.",
 		},
 	},
 } as const;
@@ -2822,6 +2861,7 @@ export interface GroupTypeMap {
 	cycleOrder: string[];
 	shellMinimizer: ShellMinimizerSettings;
 	security: SecuritySettings;
+	slack: SlackSettings;
 }
 export interface SecuritySettings {
 	executionPolicy: "permissive" | "strict";
@@ -2832,6 +2872,13 @@ export interface SecuritySettings {
 	maxAuthFailures: number;
 	sandbox: "off" | "warn" | "enforce";
 	"sandbox.profileOverrides": Record<string, unknown>;
+}
+
+export interface SlackSettings {
+	enabled: boolean;
+	appToken: string | undefined;
+	botToken: string | undefined;
+	channelId: string | undefined;
 }
 
 export type GroupPrefix = keyof GroupTypeMap;

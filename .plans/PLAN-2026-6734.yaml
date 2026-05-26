@@ -1,0 +1,1514 @@
+id: PLAN-2026-6734
+title: AU-10 Non-Repudiation Compliance Assessment
+status: draft
+size: small
+created: 2026-05-25T17:20:21.570460Z
+updated: 2026-05-25T17:21:31.038052Z
+author: tfrench
+objective: Assess current oh-my-pi project compliance with NIST 800-53 AU-10 (Non-repudiation) at the HIGH baseline level, identify gaps, and document findings.
+approach: null
+phases: []
+files_affected: []
+compliance:
+  baseline: high
+  controls_checked:
+  - id: AC-1
+    status: gap
+    narrative: null
+    gap: Control AC-1 not addressed
+  - id: AC-2
+    status: gap
+    narrative: null
+    gap: Control AC-2 not addressed
+  - id: AC-2.1
+    status: gap
+    narrative: null
+    gap: Control AC-2.1 not addressed
+  - id: AC-2.2
+    status: gap
+    narrative: null
+    gap: Control AC-2.2 not addressed
+  - id: AC-2.3
+    status: gap
+    narrative: null
+    gap: Control AC-2.3 not addressed
+  - id: AC-2.4
+    status: gap
+    narrative: null
+    gap: Control AC-2.4 not addressed
+  - id: AC-2.5
+    status: gap
+    narrative: null
+    gap: Control AC-2.5 not addressed
+  - id: AC-2.11
+    status: gap
+    narrative: null
+    gap: Control AC-2.11 not addressed
+  - id: AC-2.12
+    status: gap
+    narrative: null
+    gap: Control AC-2.12 not addressed
+  - id: AC-2.13
+    status: gap
+    narrative: null
+    gap: Control AC-2.13 not addressed
+  - id: AC-3
+    status: gap
+    narrative: null
+    gap: Control AC-3 not addressed
+  - id: AC-4
+    status: gap
+    narrative: null
+    gap: Control AC-4 not addressed
+  - id: AC-4.4
+    status: gap
+    narrative: null
+    gap: Control AC-4.4 not addressed
+  - id: AC-5
+    status: gap
+    narrative: null
+    gap: Control AC-5 not addressed
+  - id: AC-6
+    status: gap
+    narrative: null
+    gap: Control AC-6 not addressed
+  - id: AC-6.1
+    status: gap
+    narrative: null
+    gap: Control AC-6.1 not addressed
+  - id: AC-6.2
+    status: gap
+    narrative: null
+    gap: Control AC-6.2 not addressed
+  - id: AC-6.3
+    status: gap
+    narrative: null
+    gap: Control AC-6.3 not addressed
+  - id: AC-6.5
+    status: gap
+    narrative: null
+    gap: Control AC-6.5 not addressed
+  - id: AC-6.7
+    status: gap
+    narrative: null
+    gap: Control AC-6.7 not addressed
+  - id: AC-6.9
+    status: gap
+    narrative: null
+    gap: Control AC-6.9 not addressed
+  - id: AC-6.10
+    status: gap
+    narrative: null
+    gap: Control AC-6.10 not addressed
+  - id: AC-7
+    status: gap
+    narrative: null
+    gap: Control AC-7 not addressed
+  - id: AC-8
+    status: gap
+    narrative: null
+    gap: Control AC-8 not addressed
+  - id: AC-10
+    status: gap
+    narrative: null
+    gap: Control AC-10 not addressed
+  - id: AC-11
+    status: gap
+    narrative: null
+    gap: Control AC-11 not addressed
+  - id: AC-11.1
+    status: gap
+    narrative: null
+    gap: Control AC-11.1 not addressed
+  - id: AC-12
+    status: gap
+    narrative: null
+    gap: Control AC-12 not addressed
+  - id: AC-14
+    status: gap
+    narrative: null
+    gap: Control AC-14 not addressed
+  - id: AC-17
+    status: gap
+    narrative: null
+    gap: Control AC-17 not addressed
+  - id: AC-17.1
+    status: gap
+    narrative: null
+    gap: Control AC-17.1 not addressed
+  - id: AC-17.2
+    status: gap
+    narrative: null
+    gap: Control AC-17.2 not addressed
+  - id: AC-17.3
+    status: gap
+    narrative: null
+    gap: Control AC-17.3 not addressed
+  - id: AC-17.4
+    status: gap
+    narrative: null
+    gap: Control AC-17.4 not addressed
+  - id: AC-18
+    status: gap
+    narrative: null
+    gap: Control AC-18 not addressed
+  - id: AC-18.1
+    status: gap
+    narrative: null
+    gap: Control AC-18.1 not addressed
+  - id: AC-18.3
+    status: gap
+    narrative: null
+    gap: Control AC-18.3 not addressed
+  - id: AC-18.4
+    status: gap
+    narrative: null
+    gap: Control AC-18.4 not addressed
+  - id: AC-18.5
+    status: gap
+    narrative: null
+    gap: Control AC-18.5 not addressed
+  - id: AC-19
+    status: gap
+    narrative: null
+    gap: Control AC-19 not addressed
+  - id: AC-19.5
+    status: gap
+    narrative: null
+    gap: Control AC-19.5 not addressed
+  - id: AC-20
+    status: gap
+    narrative: null
+    gap: Control AC-20 not addressed
+  - id: AC-20.1
+    status: gap
+    narrative: null
+    gap: Control AC-20.1 not addressed
+  - id: AC-20.2
+    status: gap
+    narrative: null
+    gap: Control AC-20.2 not addressed
+  - id: AC-21
+    status: gap
+    narrative: null
+    gap: Control AC-21 not addressed
+  - id: AC-22
+    status: gap
+    narrative: null
+    gap: Control AC-22 not addressed
+  - id: AT-1
+    status: gap
+    narrative: null
+    gap: Control AT-1 not addressed
+  - id: AT-2
+    status: gap
+    narrative: null
+    gap: Control AT-2 not addressed
+  - id: AT-2.2
+    status: gap
+    narrative: null
+    gap: Control AT-2.2 not addressed
+  - id: AT-2.3
+    status: gap
+    narrative: null
+    gap: Control AT-2.3 not addressed
+  - id: AT-3
+    status: gap
+    narrative: null
+    gap: Control AT-3 not addressed
+  - id: AT-4
+    status: gap
+    narrative: null
+    gap: Control AT-4 not addressed
+  - id: AU-1
+    status: gap
+    narrative: null
+    gap: Control AU-1 not addressed
+  - id: AU-2
+    status: gap
+    narrative: null
+    gap: Control AU-2 not addressed
+  - id: AU-3
+    status: gap
+    narrative: null
+    gap: Control AU-3 not addressed
+  - id: AU-3.1
+    status: gap
+    narrative: null
+    gap: Control AU-3.1 not addressed
+  - id: AU-4
+    status: gap
+    narrative: null
+    gap: Control AU-4 not addressed
+  - id: AU-5
+    status: gap
+    narrative: null
+    gap: Control AU-5 not addressed
+  - id: AU-5.1
+    status: gap
+    narrative: null
+    gap: Control AU-5.1 not addressed
+  - id: AU-5.2
+    status: gap
+    narrative: null
+    gap: Control AU-5.2 not addressed
+  - id: AU-6
+    status: gap
+    narrative: null
+    gap: Control AU-6 not addressed
+  - id: AU-6.1
+    status: gap
+    narrative: null
+    gap: Control AU-6.1 not addressed
+  - id: AU-6.3
+    status: gap
+    narrative: null
+    gap: Control AU-6.3 not addressed
+  - id: AU-6.5
+    status: gap
+    narrative: null
+    gap: Control AU-6.5 not addressed
+  - id: AU-6.6
+    status: gap
+    narrative: null
+    gap: Control AU-6.6 not addressed
+  - id: AU-7
+    status: gap
+    narrative: null
+    gap: Control AU-7 not addressed
+  - id: AU-7.1
+    status: gap
+    narrative: null
+    gap: Control AU-7.1 not addressed
+  - id: AU-8
+    status: gap
+    narrative: null
+    gap: Control AU-8 not addressed
+  - id: AU-9
+    status: gap
+    narrative: null
+    gap: Control AU-9 not addressed
+  - id: AU-9.2
+    status: gap
+    narrative: null
+    gap: Control AU-9.2 not addressed
+  - id: AU-9.3
+    status: gap
+    narrative: null
+    gap: Control AU-9.3 not addressed
+  - id: AU-9.4
+    status: gap
+    narrative: null
+    gap: Control AU-9.4 not addressed
+  - id: AU-10
+    status: gap
+    narrative: null
+    gap: Control AU-10 not addressed
+  - id: AU-11
+    status: gap
+    narrative: null
+    gap: Control AU-11 not addressed
+  - id: AU-12
+    status: gap
+    narrative: null
+    gap: Control AU-12 not addressed
+  - id: AU-12.1
+    status: gap
+    narrative: null
+    gap: Control AU-12.1 not addressed
+  - id: AU-12.3
+    status: gap
+    narrative: null
+    gap: Control AU-12.3 not addressed
+  - id: CA-1
+    status: gap
+    narrative: null
+    gap: Control CA-1 not addressed
+  - id: CA-2
+    status: gap
+    narrative: null
+    gap: Control CA-2 not addressed
+  - id: CA-2.1
+    status: gap
+    narrative: null
+    gap: Control CA-2.1 not addressed
+  - id: CA-2.2
+    status: gap
+    narrative: null
+    gap: Control CA-2.2 not addressed
+  - id: CA-3
+    status: gap
+    narrative: null
+    gap: Control CA-3 not addressed
+  - id: CA-3.6
+    status: gap
+    narrative: null
+    gap: Control CA-3.6 not addressed
+  - id: CA-5
+    status: gap
+    narrative: null
+    gap: Control CA-5 not addressed
+  - id: CA-6
+    status: gap
+    narrative: null
+    gap: Control CA-6 not addressed
+  - id: CA-7
+    status: gap
+    narrative: null
+    gap: Control CA-7 not addressed
+  - id: CA-7.1
+    status: gap
+    narrative: null
+    gap: Control CA-7.1 not addressed
+  - id: CA-7.4
+    status: gap
+    narrative: null
+    gap: Control CA-7.4 not addressed
+  - id: CA-8
+    status: gap
+    narrative: null
+    gap: Control CA-8 not addressed
+  - id: CA-8.1
+    status: gap
+    narrative: null
+    gap: Control CA-8.1 not addressed
+  - id: CA-9
+    status: gap
+    narrative: null
+    gap: Control CA-9 not addressed
+  - id: CM-1
+    status: gap
+    narrative: null
+    gap: Control CM-1 not addressed
+  - id: CM-2
+    status: gap
+    narrative: null
+    gap: Control CM-2 not addressed
+  - id: CM-2.2
+    status: gap
+    narrative: null
+    gap: Control CM-2.2 not addressed
+  - id: CM-2.3
+    status: gap
+    narrative: null
+    gap: Control CM-2.3 not addressed
+  - id: CM-2.7
+    status: gap
+    narrative: null
+    gap: Control CM-2.7 not addressed
+  - id: CM-3
+    status: gap
+    narrative: null
+    gap: Control CM-3 not addressed
+  - id: CM-3.1
+    status: gap
+    narrative: null
+    gap: Control CM-3.1 not addressed
+  - id: CM-3.2
+    status: gap
+    narrative: null
+    gap: Control CM-3.2 not addressed
+  - id: CM-3.4
+    status: gap
+    narrative: null
+    gap: Control CM-3.4 not addressed
+  - id: CM-3.6
+    status: gap
+    narrative: null
+    gap: Control CM-3.6 not addressed
+  - id: CM-4
+    status: gap
+    narrative: null
+    gap: Control CM-4 not addressed
+  - id: CM-4.1
+    status: gap
+    narrative: null
+    gap: Control CM-4.1 not addressed
+  - id: CM-4.2
+    status: gap
+    narrative: null
+    gap: Control CM-4.2 not addressed
+  - id: CM-5
+    status: gap
+    narrative: null
+    gap: Control CM-5 not addressed
+  - id: CM-5.1
+    status: gap
+    narrative: null
+    gap: Control CM-5.1 not addressed
+  - id: CM-6
+    status: gap
+    narrative: null
+    gap: Control CM-6 not addressed
+  - id: CM-6.1
+    status: gap
+    narrative: null
+    gap: Control CM-6.1 not addressed
+  - id: CM-6.2
+    status: gap
+    narrative: null
+    gap: Control CM-6.2 not addressed
+  - id: CM-7
+    status: gap
+    narrative: null
+    gap: Control CM-7 not addressed
+  - id: CM-7.1
+    status: gap
+    narrative: null
+    gap: Control CM-7.1 not addressed
+  - id: CM-7.2
+    status: gap
+    narrative: null
+    gap: Control CM-7.2 not addressed
+  - id: CM-7.5
+    status: gap
+    narrative: null
+    gap: Control CM-7.5 not addressed
+  - id: CM-8
+    status: gap
+    narrative: null
+    gap: Control CM-8 not addressed
+  - id: CM-8.1
+    status: gap
+    narrative: null
+    gap: Control CM-8.1 not addressed
+  - id: CM-8.2
+    status: gap
+    narrative: null
+    gap: Control CM-8.2 not addressed
+  - id: CM-8.3
+    status: gap
+    narrative: null
+    gap: Control CM-8.3 not addressed
+  - id: CM-8.4
+    status: gap
+    narrative: null
+    gap: Control CM-8.4 not addressed
+  - id: CM-9
+    status: gap
+    narrative: null
+    gap: Control CM-9 not addressed
+  - id: CM-10
+    status: gap
+    narrative: null
+    gap: Control CM-10 not addressed
+  - id: CM-11
+    status: gap
+    narrative: null
+    gap: Control CM-11 not addressed
+  - id: CM-12
+    status: gap
+    narrative: null
+    gap: Control CM-12 not addressed
+  - id: CM-12.1
+    status: gap
+    narrative: null
+    gap: Control CM-12.1 not addressed
+  - id: CP-1
+    status: gap
+    narrative: null
+    gap: Control CP-1 not addressed
+  - id: CP-2
+    status: gap
+    narrative: null
+    gap: Control CP-2 not addressed
+  - id: CP-2.1
+    status: gap
+    narrative: null
+    gap: Control CP-2.1 not addressed
+  - id: CP-2.2
+    status: gap
+    narrative: null
+    gap: Control CP-2.2 not addressed
+  - id: CP-2.3
+    status: gap
+    narrative: null
+    gap: Control CP-2.3 not addressed
+  - id: CP-2.5
+    status: gap
+    narrative: null
+    gap: Control CP-2.5 not addressed
+  - id: CP-2.8
+    status: gap
+    narrative: null
+    gap: Control CP-2.8 not addressed
+  - id: CP-3
+    status: gap
+    narrative: null
+    gap: Control CP-3 not addressed
+  - id: CP-3.1
+    status: gap
+    narrative: null
+    gap: Control CP-3.1 not addressed
+  - id: CP-4
+    status: gap
+    narrative: null
+    gap: Control CP-4 not addressed
+  - id: CP-4.1
+    status: gap
+    narrative: null
+    gap: Control CP-4.1 not addressed
+  - id: CP-4.2
+    status: gap
+    narrative: null
+    gap: Control CP-4.2 not addressed
+  - id: CP-6
+    status: gap
+    narrative: null
+    gap: Control CP-6 not addressed
+  - id: CP-6.1
+    status: gap
+    narrative: null
+    gap: Control CP-6.1 not addressed
+  - id: CP-6.2
+    status: gap
+    narrative: null
+    gap: Control CP-6.2 not addressed
+  - id: CP-6.3
+    status: gap
+    narrative: null
+    gap: Control CP-6.3 not addressed
+  - id: CP-7
+    status: gap
+    narrative: null
+    gap: Control CP-7 not addressed
+  - id: CP-7.1
+    status: gap
+    narrative: null
+    gap: Control CP-7.1 not addressed
+  - id: CP-7.2
+    status: gap
+    narrative: null
+    gap: Control CP-7.2 not addressed
+  - id: CP-7.3
+    status: gap
+    narrative: null
+    gap: Control CP-7.3 not addressed
+  - id: CP-7.4
+    status: gap
+    narrative: null
+    gap: Control CP-7.4 not addressed
+  - id: CP-8
+    status: gap
+    narrative: null
+    gap: Control CP-8 not addressed
+  - id: CP-8.1
+    status: gap
+    narrative: null
+    gap: Control CP-8.1 not addressed
+  - id: CP-8.2
+    status: gap
+    narrative: null
+    gap: Control CP-8.2 not addressed
+  - id: CP-8.3
+    status: gap
+    narrative: null
+    gap: Control CP-8.3 not addressed
+  - id: CP-8.4
+    status: gap
+    narrative: null
+    gap: Control CP-8.4 not addressed
+  - id: CP-9
+    status: gap
+    narrative: null
+    gap: Control CP-9 not addressed
+  - id: CP-9.1
+    status: gap
+    narrative: null
+    gap: Control CP-9.1 not addressed
+  - id: CP-9.2
+    status: gap
+    narrative: null
+    gap: Control CP-9.2 not addressed
+  - id: CP-9.3
+    status: gap
+    narrative: null
+    gap: Control CP-9.3 not addressed
+  - id: CP-9.5
+    status: gap
+    narrative: null
+    gap: Control CP-9.5 not addressed
+  - id: CP-9.8
+    status: gap
+    narrative: null
+    gap: Control CP-9.8 not addressed
+  - id: CP-10
+    status: gap
+    narrative: null
+    gap: Control CP-10 not addressed
+  - id: CP-10.2
+    status: gap
+    narrative: null
+    gap: Control CP-10.2 not addressed
+  - id: CP-10.4
+    status: gap
+    narrative: null
+    gap: Control CP-10.4 not addressed
+  - id: IA-1
+    status: gap
+    narrative: null
+    gap: Control IA-1 not addressed
+  - id: IA-2
+    status: gap
+    narrative: null
+    gap: Control IA-2 not addressed
+  - id: IA-2.1
+    status: gap
+    narrative: null
+    gap: Control IA-2.1 not addressed
+  - id: IA-2.2
+    status: gap
+    narrative: null
+    gap: Control IA-2.2 not addressed
+  - id: IA-2.5
+    status: gap
+    narrative: null
+    gap: Control IA-2.5 not addressed
+  - id: IA-2.8
+    status: gap
+    narrative: null
+    gap: Control IA-2.8 not addressed
+  - id: IA-2.12
+    status: gap
+    narrative: null
+    gap: Control IA-2.12 not addressed
+  - id: IA-3
+    status: gap
+    narrative: null
+    gap: Control IA-3 not addressed
+  - id: IA-4
+    status: gap
+    narrative: null
+    gap: Control IA-4 not addressed
+  - id: IA-4.4
+    status: gap
+    narrative: null
+    gap: Control IA-4.4 not addressed
+  - id: IA-5
+    status: gap
+    narrative: null
+    gap: Control IA-5 not addressed
+  - id: IA-5.1
+    status: gap
+    narrative: null
+    gap: Control IA-5.1 not addressed
+  - id: IA-5.2
+    status: gap
+    narrative: null
+    gap: Control IA-5.2 not addressed
+  - id: IA-5.6
+    status: gap
+    narrative: null
+    gap: Control IA-5.6 not addressed
+  - id: IA-6
+    status: gap
+    narrative: null
+    gap: Control IA-6 not addressed
+  - id: IA-7
+    status: gap
+    narrative: null
+    gap: Control IA-7 not addressed
+  - id: IA-8
+    status: gap
+    narrative: null
+    gap: Control IA-8 not addressed
+  - id: IA-8.1
+    status: gap
+    narrative: null
+    gap: Control IA-8.1 not addressed
+  - id: IA-8.2
+    status: gap
+    narrative: null
+    gap: Control IA-8.2 not addressed
+  - id: IA-8.4
+    status: gap
+    narrative: null
+    gap: Control IA-8.4 not addressed
+  - id: IA-11
+    status: gap
+    narrative: null
+    gap: Control IA-11 not addressed
+  - id: IA-12
+    status: gap
+    narrative: null
+    gap: Control IA-12 not addressed
+  - id: IA-12.2
+    status: gap
+    narrative: null
+    gap: Control IA-12.2 not addressed
+  - id: IA-12.3
+    status: gap
+    narrative: null
+    gap: Control IA-12.3 not addressed
+  - id: IA-12.4
+    status: gap
+    narrative: null
+    gap: Control IA-12.4 not addressed
+  - id: IA-12.5
+    status: gap
+    narrative: null
+    gap: Control IA-12.5 not addressed
+  - id: IR-1
+    status: gap
+    narrative: null
+    gap: Control IR-1 not addressed
+  - id: IR-2
+    status: gap
+    narrative: null
+    gap: Control IR-2 not addressed
+  - id: IR-2.1
+    status: gap
+    narrative: null
+    gap: Control IR-2.1 not addressed
+  - id: IR-2.2
+    status: gap
+    narrative: null
+    gap: Control IR-2.2 not addressed
+  - id: IR-3
+    status: gap
+    narrative: null
+    gap: Control IR-3 not addressed
+  - id: IR-3.2
+    status: gap
+    narrative: null
+    gap: Control IR-3.2 not addressed
+  - id: IR-4
+    status: gap
+    narrative: null
+    gap: Control IR-4 not addressed
+  - id: IR-4.1
+    status: gap
+    narrative: null
+    gap: Control IR-4.1 not addressed
+  - id: IR-4.4
+    status: gap
+    narrative: null
+    gap: Control IR-4.4 not addressed
+  - id: IR-4.11
+    status: gap
+    narrative: null
+    gap: Control IR-4.11 not addressed
+  - id: IR-5
+    status: gap
+    narrative: null
+    gap: Control IR-5 not addressed
+  - id: IR-5.1
+    status: gap
+    narrative: null
+    gap: Control IR-5.1 not addressed
+  - id: IR-6
+    status: gap
+    narrative: null
+    gap: Control IR-6 not addressed
+  - id: IR-6.1
+    status: gap
+    narrative: null
+    gap: Control IR-6.1 not addressed
+  - id: IR-6.3
+    status: gap
+    narrative: null
+    gap: Control IR-6.3 not addressed
+  - id: IR-7
+    status: gap
+    narrative: null
+    gap: Control IR-7 not addressed
+  - id: IR-7.1
+    status: gap
+    narrative: null
+    gap: Control IR-7.1 not addressed
+  - id: IR-8
+    status: gap
+    narrative: null
+    gap: Control IR-8 not addressed
+  - id: MA-1
+    status: gap
+    narrative: null
+    gap: Control MA-1 not addressed
+  - id: MA-2
+    status: gap
+    narrative: null
+    gap: Control MA-2 not addressed
+  - id: MA-2.2
+    status: gap
+    narrative: null
+    gap: Control MA-2.2 not addressed
+  - id: MA-3
+    status: gap
+    narrative: null
+    gap: Control MA-3 not addressed
+  - id: MA-3.1
+    status: gap
+    narrative: null
+    gap: Control MA-3.1 not addressed
+  - id: MA-3.2
+    status: gap
+    narrative: null
+    gap: Control MA-3.2 not addressed
+  - id: MA-3.3
+    status: gap
+    narrative: null
+    gap: Control MA-3.3 not addressed
+  - id: MA-4
+    status: gap
+    narrative: null
+    gap: Control MA-4 not addressed
+  - id: MA-4.3
+    status: gap
+    narrative: null
+    gap: Control MA-4.3 not addressed
+  - id: MA-5
+    status: gap
+    narrative: null
+    gap: Control MA-5 not addressed
+  - id: MA-5.1
+    status: gap
+    narrative: null
+    gap: Control MA-5.1 not addressed
+  - id: MA-6
+    status: gap
+    narrative: null
+    gap: Control MA-6 not addressed
+  - id: MP-1
+    status: gap
+    narrative: null
+    gap: Control MP-1 not addressed
+  - id: MP-2
+    status: gap
+    narrative: null
+    gap: Control MP-2 not addressed
+  - id: MP-3
+    status: gap
+    narrative: null
+    gap: Control MP-3 not addressed
+  - id: MP-4
+    status: gap
+    narrative: null
+    gap: Control MP-4 not addressed
+  - id: MP-5
+    status: gap
+    narrative: null
+    gap: Control MP-5 not addressed
+  - id: MP-6
+    status: gap
+    narrative: null
+    gap: Control MP-6 not addressed
+  - id: MP-6.1
+    status: gap
+    narrative: null
+    gap: Control MP-6.1 not addressed
+  - id: MP-6.2
+    status: gap
+    narrative: null
+    gap: Control MP-6.2 not addressed
+  - id: MP-6.3
+    status: gap
+    narrative: null
+    gap: Control MP-6.3 not addressed
+  - id: MP-7
+    status: gap
+    narrative: null
+    gap: Control MP-7 not addressed
+  - id: PE-1
+    status: gap
+    narrative: null
+    gap: Control PE-1 not addressed
+  - id: PE-2
+    status: gap
+    narrative: null
+    gap: Control PE-2 not addressed
+  - id: PE-3
+    status: gap
+    narrative: null
+    gap: Control PE-3 not addressed
+  - id: PE-3.1
+    status: gap
+    narrative: null
+    gap: Control PE-3.1 not addressed
+  - id: PE-4
+    status: gap
+    narrative: null
+    gap: Control PE-4 not addressed
+  - id: PE-5
+    status: gap
+    narrative: null
+    gap: Control PE-5 not addressed
+  - id: PE-6
+    status: gap
+    narrative: null
+    gap: Control PE-6 not addressed
+  - id: PE-6.1
+    status: gap
+    narrative: null
+    gap: Control PE-6.1 not addressed
+  - id: PE-6.4
+    status: gap
+    narrative: null
+    gap: Control PE-6.4 not addressed
+  - id: PE-8
+    status: gap
+    narrative: null
+    gap: Control PE-8 not addressed
+  - id: PE-8.1
+    status: gap
+    narrative: null
+    gap: Control PE-8.1 not addressed
+  - id: PE-9
+    status: gap
+    narrative: null
+    gap: Control PE-9 not addressed
+  - id: PE-10
+    status: gap
+    narrative: null
+    gap: Control PE-10 not addressed
+  - id: PE-11
+    status: gap
+    narrative: null
+    gap: Control PE-11 not addressed
+  - id: PE-11.1
+    status: gap
+    narrative: null
+    gap: Control PE-11.1 not addressed
+  - id: PE-12
+    status: gap
+    narrative: null
+    gap: Control PE-12 not addressed
+  - id: PE-13
+    status: gap
+    narrative: null
+    gap: Control PE-13 not addressed
+  - id: PE-13.1
+    status: gap
+    narrative: null
+    gap: Control PE-13.1 not addressed
+  - id: PE-13.2
+    status: gap
+    narrative: null
+    gap: Control PE-13.2 not addressed
+  - id: PE-14
+    status: gap
+    narrative: null
+    gap: Control PE-14 not addressed
+  - id: PE-15
+    status: gap
+    narrative: null
+    gap: Control PE-15 not addressed
+  - id: PE-15.1
+    status: gap
+    narrative: null
+    gap: Control PE-15.1 not addressed
+  - id: PE-16
+    status: gap
+    narrative: null
+    gap: Control PE-16 not addressed
+  - id: PE-17
+    status: gap
+    narrative: null
+    gap: Control PE-17 not addressed
+  - id: PE-18
+    status: gap
+    narrative: null
+    gap: Control PE-18 not addressed
+  - id: PL-1
+    status: gap
+    narrative: null
+    gap: Control PL-1 not addressed
+  - id: PL-2
+    status: gap
+    narrative: null
+    gap: Control PL-2 not addressed
+  - id: PL-4
+    status: gap
+    narrative: null
+    gap: Control PL-4 not addressed
+  - id: PL-4.1
+    status: gap
+    narrative: null
+    gap: Control PL-4.1 not addressed
+  - id: PL-8
+    status: gap
+    narrative: null
+    gap: Control PL-8 not addressed
+  - id: PL-10
+    status: gap
+    narrative: null
+    gap: Control PL-10 not addressed
+  - id: PL-11
+    status: gap
+    narrative: null
+    gap: Control PL-11 not addressed
+  - id: PS-1
+    status: gap
+    narrative: null
+    gap: Control PS-1 not addressed
+  - id: PS-2
+    status: gap
+    narrative: null
+    gap: Control PS-2 not addressed
+  - id: PS-3
+    status: gap
+    narrative: null
+    gap: Control PS-3 not addressed
+  - id: PS-4
+    status: gap
+    narrative: null
+    gap: Control PS-4 not addressed
+  - id: PS-4.2
+    status: gap
+    narrative: null
+    gap: Control PS-4.2 not addressed
+  - id: PS-5
+    status: gap
+    narrative: null
+    gap: Control PS-5 not addressed
+  - id: PS-6
+    status: gap
+    narrative: null
+    gap: Control PS-6 not addressed
+  - id: PS-7
+    status: gap
+    narrative: null
+    gap: Control PS-7 not addressed
+  - id: PS-8
+    status: gap
+    narrative: null
+    gap: Control PS-8 not addressed
+  - id: PS-9
+    status: gap
+    narrative: null
+    gap: Control PS-9 not addressed
+  - id: RA-1
+    status: gap
+    narrative: null
+    gap: Control RA-1 not addressed
+  - id: RA-2
+    status: gap
+    narrative: null
+    gap: Control RA-2 not addressed
+  - id: RA-3
+    status: gap
+    narrative: null
+    gap: Control RA-3 not addressed
+  - id: RA-3.1
+    status: gap
+    narrative: null
+    gap: Control RA-3.1 not addressed
+  - id: RA-5
+    status: gap
+    narrative: null
+    gap: Control RA-5 not addressed
+  - id: RA-5.2
+    status: gap
+    narrative: null
+    gap: Control RA-5.2 not addressed
+  - id: RA-5.4
+    status: gap
+    narrative: null
+    gap: Control RA-5.4 not addressed
+  - id: RA-5.5
+    status: gap
+    narrative: null
+    gap: Control RA-5.5 not addressed
+  - id: RA-5.11
+    status: gap
+    narrative: null
+    gap: Control RA-5.11 not addressed
+  - id: RA-7
+    status: gap
+    narrative: null
+    gap: Control RA-7 not addressed
+  - id: RA-9
+    status: gap
+    narrative: null
+    gap: Control RA-9 not addressed
+  - id: SA-1
+    status: gap
+    narrative: null
+    gap: Control SA-1 not addressed
+  - id: SA-2
+    status: gap
+    narrative: null
+    gap: Control SA-2 not addressed
+  - id: SA-3
+    status: gap
+    narrative: null
+    gap: Control SA-3 not addressed
+  - id: SA-4
+    status: gap
+    narrative: null
+    gap: Control SA-4 not addressed
+  - id: SA-4.1
+    status: gap
+    narrative: null
+    gap: Control SA-4.1 not addressed
+  - id: SA-4.2
+    status: gap
+    narrative: null
+    gap: Control SA-4.2 not addressed
+  - id: SA-4.5
+    status: gap
+    narrative: null
+    gap: Control SA-4.5 not addressed
+  - id: SA-4.9
+    status: gap
+    narrative: null
+    gap: Control SA-4.9 not addressed
+  - id: SA-4.10
+    status: gap
+    narrative: null
+    gap: Control SA-4.10 not addressed
+  - id: SA-5
+    status: gap
+    narrative: null
+    gap: Control SA-5 not addressed
+  - id: SA-8
+    status: gap
+    narrative: null
+    gap: Control SA-8 not addressed
+  - id: SA-9
+    status: gap
+    narrative: null
+    gap: Control SA-9 not addressed
+  - id: SA-9.2
+    status: gap
+    narrative: null
+    gap: Control SA-9.2 not addressed
+  - id: SA-10
+    status: gap
+    narrative: null
+    gap: Control SA-10 not addressed
+  - id: SA-11
+    status: gap
+    narrative: null
+    gap: Control SA-11 not addressed
+  - id: SA-15
+    status: gap
+    narrative: null
+    gap: Control SA-15 not addressed
+  - id: SA-15.3
+    status: gap
+    narrative: null
+    gap: Control SA-15.3 not addressed
+  - id: SA-16
+    status: gap
+    narrative: null
+    gap: Control SA-16 not addressed
+  - id: SA-17
+    status: gap
+    narrative: null
+    gap: Control SA-17 not addressed
+  - id: SA-21
+    status: gap
+    narrative: null
+    gap: Control SA-21 not addressed
+  - id: SA-22
+    status: gap
+    narrative: null
+    gap: Control SA-22 not addressed
+  - id: SC-1
+    status: gap
+    narrative: null
+    gap: Control SC-1 not addressed
+  - id: SC-2
+    status: gap
+    narrative: null
+    gap: Control SC-2 not addressed
+  - id: SC-3
+    status: gap
+    narrative: null
+    gap: Control SC-3 not addressed
+  - id: SC-4
+    status: gap
+    narrative: null
+    gap: Control SC-4 not addressed
+  - id: SC-5
+    status: gap
+    narrative: null
+    gap: Control SC-5 not addressed
+  - id: SC-7
+    status: gap
+    narrative: null
+    gap: Control SC-7 not addressed
+  - id: SC-7.3
+    status: gap
+    narrative: null
+    gap: Control SC-7.3 not addressed
+  - id: SC-7.4
+    status: gap
+    narrative: null
+    gap: Control SC-7.4 not addressed
+  - id: SC-7.5
+    status: gap
+    narrative: null
+    gap: Control SC-7.5 not addressed
+  - id: SC-7.7
+    status: gap
+    narrative: null
+    gap: Control SC-7.7 not addressed
+  - id: SC-7.8
+    status: gap
+    narrative: null
+    gap: Control SC-7.8 not addressed
+  - id: SC-7.18
+    status: gap
+    narrative: null
+    gap: Control SC-7.18 not addressed
+  - id: SC-7.21
+    status: gap
+    narrative: null
+    gap: Control SC-7.21 not addressed
+  - id: SC-8
+    status: gap
+    narrative: null
+    gap: Control SC-8 not addressed
+  - id: SC-8.1
+    status: gap
+    narrative: null
+    gap: Control SC-8.1 not addressed
+  - id: SC-10
+    status: gap
+    narrative: null
+    gap: Control SC-10 not addressed
+  - id: SC-12
+    status: gap
+    narrative: null
+    gap: Control SC-12 not addressed
+  - id: SC-12.1
+    status: gap
+    narrative: null
+    gap: Control SC-12.1 not addressed
+  - id: SC-13
+    status: gap
+    narrative: null
+    gap: Control SC-13 not addressed
+  - id: SC-15
+    status: gap
+    narrative: null
+    gap: Control SC-15 not addressed
+  - id: SC-17
+    status: gap
+    narrative: null
+    gap: Control SC-17 not addressed
+  - id: SC-18
+    status: gap
+    narrative: null
+    gap: Control SC-18 not addressed
+  - id: SC-20
+    status: gap
+    narrative: null
+    gap: Control SC-20 not addressed
+  - id: SC-21
+    status: gap
+    narrative: null
+    gap: Control SC-21 not addressed
+  - id: SC-22
+    status: gap
+    narrative: null
+    gap: Control SC-22 not addressed
+  - id: SC-23
+    status: gap
+    narrative: null
+    gap: Control SC-23 not addressed
+  - id: SC-24
+    status: gap
+    narrative: null
+    gap: Control SC-24 not addressed
+  - id: SC-28
+    status: gap
+    narrative: null
+    gap: Control SC-28 not addressed
+  - id: SC-28.1
+    status: gap
+    narrative: null
+    gap: Control SC-28.1 not addressed
+  - id: SC-39
+    status: gap
+    narrative: null
+    gap: Control SC-39 not addressed
+  - id: SI-1
+    status: gap
+    narrative: null
+    gap: Control SI-1 not addressed
+  - id: SI-2
+    status: gap
+    narrative: null
+    gap: Control SI-2 not addressed
+  - id: SI-2.2
+    status: gap
+    narrative: null
+    gap: Control SI-2.2 not addressed
+  - id: SI-3
+    status: gap
+    narrative: null
+    gap: Control SI-3 not addressed
+  - id: SI-4
+    status: gap
+    narrative: null
+    gap: Control SI-4 not addressed
+  - id: SI-4.2
+    status: gap
+    narrative: null
+    gap: Control SI-4.2 not addressed
+  - id: SI-4.4
+    status: gap
+    narrative: null
+    gap: Control SI-4.4 not addressed
+  - id: SI-4.5
+    status: gap
+    narrative: null
+    gap: Control SI-4.5 not addressed
+  - id: SI-4.10
+    status: gap
+    narrative: null
+    gap: Control SI-4.10 not addressed
+  - id: SI-4.12
+    status: gap
+    narrative: null
+    gap: Control SI-4.12 not addressed
+  - id: SI-4.14
+    status: gap
+    narrative: null
+    gap: Control SI-4.14 not addressed
+  - id: SI-4.20
+    status: gap
+    narrative: null
+    gap: Control SI-4.20 not addressed
+  - id: SI-4.22
+    status: gap
+    narrative: null
+    gap: Control SI-4.22 not addressed
+  - id: SI-5
+    status: gap
+    narrative: null
+    gap: Control SI-5 not addressed
+  - id: SI-5.1
+    status: gap
+    narrative: null
+    gap: Control SI-5.1 not addressed
+  - id: SI-6
+    status: gap
+    narrative: null
+    gap: Control SI-6 not addressed
+  - id: SI-7
+    status: gap
+    narrative: null
+    gap: Control SI-7 not addressed
+  - id: SI-7.1
+    status: gap
+    narrative: null
+    gap: Control SI-7.1 not addressed
+  - id: SI-7.2
+    status: gap
+    narrative: null
+    gap: Control SI-7.2 not addressed
+  - id: SI-7.5
+    status: gap
+    narrative: null
+    gap: Control SI-7.5 not addressed
+  - id: SI-7.7
+    status: gap
+    narrative: null
+    gap: Control SI-7.7 not addressed
+  - id: SI-7.15
+    status: gap
+    narrative: null
+    gap: Control SI-7.15 not addressed
+  - id: SI-8
+    status: gap
+    narrative: null
+    gap: Control SI-8 not addressed
+  - id: SI-8.2
+    status: gap
+    narrative: null
+    gap: Control SI-8.2 not addressed
+  - id: SI-10
+    status: gap
+    narrative: null
+    gap: Control SI-10 not addressed
+  - id: SI-11
+    status: gap
+    narrative: null
+    gap: Control SI-11 not addressed
+  - id: SI-12
+    status: gap
+    narrative: null
+    gap: Control SI-12 not addressed
+  - id: SI-16
+    status: gap
+    narrative: null
+    gap: Control SI-16 not addressed
+  - id: SR-1
+    status: gap
+    narrative: null
+    gap: Control SR-1 not addressed
+  - id: SR-2
+    status: gap
+    narrative: null
+    gap: Control SR-2 not addressed
+  - id: SR-2.1
+    status: gap
+    narrative: null
+    gap: Control SR-2.1 not addressed
+  - id: SR-3
+    status: gap
+    narrative: null
+    gap: Control SR-3 not addressed
+  - id: SR-5
+    status: gap
+    narrative: null
+    gap: Control SR-5 not addressed
+  - id: SR-6
+    status: gap
+    narrative: null
+    gap: Control SR-6 not addressed
+  - id: SR-8
+    status: gap
+    narrative: null
+    gap: Control SR-8 not addressed
+  - id: SR-9
+    status: gap
+    narrative: null
+    gap: Control SR-9 not addressed
+  - id: SR-9.1
+    status: gap
+    narrative: null
+    gap: Control SR-9.1 not addressed
+  - id: SR-10
+    status: gap
+    narrative: null
+    gap: Control SR-10 not addressed
+  - id: SR-11
+    status: gap
+    narrative: null
+    gap: Control SR-11 not addressed
+  - id: SR-11.1
+    status: gap
+    narrative: null
+    gap: Control SR-11.1 not addressed
+  - id: SR-11.2
+    status: gap
+    narrative: null
+    gap: Control SR-11.2 not addressed
+  - id: SR-12
+    status: gap
+    narrative: null
+    gap: Control SR-12 not addressed
+  checked_at: 2026-05-25T17:20:24.617431Z
+decisions:
+- id: PLAN-2026-6734-DEC-001
+  timestamp: 2026-05-25T17:21:31.038049Z
+  context: Assessing AU-10 Non-repudiation compliance for a single-user CLI tool (oh-my-pi coding agent). The control requires irrefutable evidence that an individual performed specific actions. The system uses SHA-256 hash chains and HMAC-SHA256 for audit log integrity/authenticity but has no asymmetric digital signatures.
+  decision: AU-10 is PARTIALLY SATISFIED with compensating controls. The existing SHA-256 hash chain + HMAC-SHA256 + file permissions (0o600) + process identity (PID, sessionId) provide adequate non-repudiation for the single-user CLI operational context. No changes required at this time.
+  alternatives:
+  - Add Ed25519 digital signatures on each audit record for cryptographic non-repudiation
+  - Integrate RFC 3161 timestamp authority for independent time proof
+  - Implement full AU-10(1) identity binding with per-user keypair in OS keychain
+  - Mark AU-10 as not-applicable for single-user CLI (too aggressive — control IS in HIGH baseline)
+  rationale: 'For a single-user CLI tool, the threat scenario for non-repudiation is an operator denying they ran a command. The existing controls make forging logs require: knowledge of HMAC key + ability to recompute hash chain + modifying a file they already own. This is equivalent to disputing actions you have full control over — a scenario digital signatures address but which is disproportionate for local CLI tooling. The HIGH baseline requires AU-10 but does not mandate specific mechanisms — hash chains and HMAC satisfy the control''s intent in this operational context.'
+  controls_affected:
+  - AU-10
+  - AU-9
+  - SC-13
+gitlab:
+  issue: null
+  plan_mr: null
+  impl_mr: null

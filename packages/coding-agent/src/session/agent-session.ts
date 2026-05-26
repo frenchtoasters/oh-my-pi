@@ -677,7 +677,8 @@ export class AgentSession {
 		this.#toolRegistry = config.toolRegistry ?? new Map();
 		this.#transformContext = config.transformContext ?? (messages => messages);
 		// Context pruning: apply the pre-computed prune state on each transformContext call.
-		// State is recomputed at turn boundaries (agent_start, turn_end) and after compaction.
+		// State is recomputed at agent_start and after compaction (when cache is already cold).
+		// NOT recomputed at turn_end — keeping it stable within an agent loop maximizes cache hits.
 		const pruningTransform = (messages: AgentMessage[]) => applyPruneState(messages, this.#pruneState);
 		const existingTransform = this.#transformContext;
 		this.#transformContext = composeTransforms([existingTransform, pruningTransform]);
@@ -1930,7 +1931,6 @@ export class AgentSession {
 			};
 			await this.#extensionRunner.emit(hookEvent);
 			this.#turnIndex++;
-			this.#recomputePruneState();
 		} else if (event.type === "message_start") {
 			const extensionEvent: MessageStartEvent = {
 				type: "message_start",
@@ -5134,8 +5134,8 @@ export class AgentSession {
 					content: this.#normalizeProviderReplayValue(message.content),
 				};
 			case "assistant": {
-			// Legacy: retained for backward-compatible replay of historical session messages
-			// that were created by the now-removed openai-responses/openai-codex-responses providers.
+				// Legacy: retained for backward-compatible replay of historical session messages
+				// that were created by the now-removed openai-responses/openai-codex-responses providers.
 				const isResponsesFamilyMessage =
 					message.api === "openai-responses" || message.api === "openai-codex-responses";
 				return {

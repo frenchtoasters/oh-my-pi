@@ -52,6 +52,7 @@ import type { SubmittedUserInput } from "./modes/types";
 import { type CreateAgentSessionOptions, createAgentSession, discoverAuthStorage } from "./sdk";
 import type { AgentSession } from "./session/agent-session";
 import { resolveResumableSession, type SessionInfo, SessionManager } from "./session/session-manager";
+import { resolveSlackConfig, SlackBridge, setActiveSlackBridge } from "./slack";
 import { resolvePromptInput } from "./system-prompt";
 import type { LspStartupServerInfo } from "./tools";
 import { getChangelogPath, getNewEntries, parseChangelog } from "./utils/changelog";
@@ -845,6 +846,25 @@ export async function runRootCommand(parsed: Args, rawArgs: string[]): Promise<v
 		}
 		return nextSession;
 	};
+
+	// Start Slack bridge if --slack flag is explicitly set for this session
+	if (parsedArgs.slack) {
+		const slackConfig = resolveSlackConfig((key: string) => settings.get(key as any));
+		if (slackConfig) {
+			const bridge = new SlackBridge(session, slackConfig);
+			try {
+				await bridge.start();
+				setActiveSlackBridge(bridge);
+				logger.debug("Slack bridge active", { channelId: slackConfig.channelId });
+				postmortem.register("slack-bridge-stop", async () => {
+					await bridge.stop();
+					setActiveSlackBridge(undefined);
+				});
+			} catch (err) {
+				logger.error("Failed to start Slack bridge", { error: String(err) });
+			}
+		}
+	}
 
 	if (mode === "rpc") {
 		await runRpcMode(session);

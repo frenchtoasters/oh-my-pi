@@ -14,6 +14,13 @@ import {
 	MarketplaceManager,
 } from "../extensibility/plugins/marketplace";
 import type { InteractiveModeContext } from "../modes/types";
+import {
+	getActiveSlackBridge,
+	getLastSlackThreadTs,
+	resolveSlackConfig,
+	SlackBridge,
+	setActiveSlackBridge,
+} from "../slack";
 import { parseMarketplaceInstallArgs, parsePluginScopeArgs } from "./marketplace-install-parser";
 
 function refreshStatusLine(ctx: InteractiveModeContext): void {
@@ -1002,6 +1009,71 @@ const BUILTIN_SLASH_COMMAND_REGISTRY: ReadonlyArray<BuiltinSlashCommandSpec> = [
 		name: "quit",
 		description: "Quit the application",
 		handle: shutdownHandler,
+	},
+	{
+		name: "slack",
+		description: "Manage Slack remote control bridge",
+		subcommands: [
+			{ name: "start", description: "Start the Slack bridge (default)" },
+			{ name: "stop", description: "Disconnect the Slack bridge" },
+			{ name: "status", description: "Show bridge connection status" },
+		],
+		allowArgs: true,
+		handle: async (command, runtime) => {
+			const sub = command.args.trim().toLowerCase() || "start";
+
+			if (sub === "stop") {
+				const bridge = getActiveSlackBridge();
+				if (!bridge) {
+					runtime.ctx.showStatus("Slack bridge is not running.");
+				} else {
+					await bridge.stop();
+					setActiveSlackBridge(undefined);
+					runtime.ctx.showStatus("Slack bridge disconnected.");
+				}
+				runtime.ctx.editor.setText("");
+				return;
+			}
+
+			if (sub === "status") {
+				const bridge = getActiveSlackBridge();
+				runtime.ctx.showStatus(bridge ? `Slack bridge: ${bridge.status}` : "Slack bridge is not running.");
+				runtime.ctx.editor.setText("");
+				return;
+			}
+
+			if (sub === "start") {
+				if (getActiveSlackBridge()?.status === "connected") {
+					runtime.ctx.showStatus("Slack bridge is already connected.");
+					runtime.ctx.editor.setText("");
+					return;
+				}
+				const { settings: sessionSettings } = runtime.ctx.session;
+				const slackConfig = resolveSlackConfig((key: string) => sessionSettings.get(key as any));
+				if (!slackConfig) {
+					runtime.ctx.showError(
+						"Slack bridge config incomplete. Set SLACK_APP_TOKEN, SLACK_BOT_TOKEN, SLACK_CHANNEL_ID env vars or configure slack.* settings.",
+					);
+					runtime.ctx.editor.setText("");
+					return;
+				}
+				// Reuse existing thread if this session previously had a bridge (reconnect scenario).
+				const existingThreadTs = getLastSlackThreadTs();
+				const bridge = new SlackBridge(runtime.ctx.session, { ...slackConfig, threadTs: existingThreadTs });
+				try {
+					await bridge.start();
+					setActiveSlackBridge(bridge);
+					runtime.ctx.showStatus("Slack bridge connected.");
+				} catch (err) {
+					runtime.ctx.showError(`Slack bridge failed: ${err instanceof Error ? err.message : String(err)}`);
+				}
+				runtime.ctx.editor.setText("");
+				return;
+			}
+
+			runtime.ctx.showStatus("Usage: /slack [start|stop|status]");
+			runtime.ctx.editor.setText("");
+		},
 	},
 ];
 
