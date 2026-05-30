@@ -408,7 +408,7 @@ export const SETTINGS_SCHEMA = {
 	},
 	"tools.artifactTailBytes": {
 		type: "number",
-		default: 20,
+		default: 5, // Reduced from 20KB to 5KB — LLM rarely needs full tail; saves ~3-4K tokens per spill
 		ui: {
 			tab: "tools",
 			label: "Artifact tail size (KB)",
@@ -427,7 +427,7 @@ export const SETTINGS_SCHEMA = {
 	},
 	"tools.artifactTailLines": {
 		type: "number",
-		default: 500,
+		default: 50, // Reduced from 500 to 50 lines — keeps context lean; full output available via artifact reference
 		ui: {
 			tab: "tools",
 			label: "Artifact tail lines",
@@ -1101,11 +1101,11 @@ export const SETTINGS_SCHEMA = {
 
 	"compaction.idleTimeoutSeconds": {
 		type: "number",
-		default: 120,
+		default: 2700,
 		ui: {
 			tab: "context",
 			label: "Idle Compaction Delay",
-			description: "Seconds to wait while idle before compacting",
+			description: "Seconds to wait while idle before compacting (default raised to 45min to preserve prompt cache during test sessions)",
 			options: [
 				{ value: "60", label: "1 minute" },
 				{ value: "120", label: "2 minutes" },

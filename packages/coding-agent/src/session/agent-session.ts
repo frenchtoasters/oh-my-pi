@@ -549,7 +549,9 @@ export class AgentSession {
 		deduplication: {
 			protectedTools: ["task", "skill", "todowrite", "todoread", "write", "edit", "read"],
 			protectedFilePatterns: [],
-			turnProtectionTurns: 4,
+			// Reduced from 6 to 2 — shorter window removes stale duplicates earlier,
+			// improving cache hit rate without impacting recent context stability
+			turnProtectionTurns: 2,
 		},
 		purgeErrors: {
 			turnThreshold: 2,

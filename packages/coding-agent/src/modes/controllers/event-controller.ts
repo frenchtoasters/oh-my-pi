@@ -665,7 +665,8 @@ export class EventController {
 		if (threshold <= 0) return;
 		if (this.#currentContextTokens() < threshold) return;
 
-		const timeoutMs = Math.max(60, Math.min(3600, idleSettings.idleTimeoutSeconds)) * 1000;
+		// Upper bound raised to 7200s (2h) to support higher idle timeouts that preserve prompt cache
+		const timeoutMs = Math.max(60, Math.min(7200, idleSettings.idleTimeoutSeconds)) * 1000;
 		this.#idleCompactionTimer = setTimeout(() => {
 			this.#idleCompactionTimer = undefined;
 			// Re-check conditions before firing. Pruning may have run between arming

@@ -465,7 +465,11 @@ async function spillLargeResultToArtifact(
 ): Promise<AgentToolResult> {
 	const sessionManager = context?.sessionManager;
 	if (!sessionManager) return result;
-	if (toolName === "read") return result;
+	// NOTE: Read tool now participates in artifact spill (previously bypassed).
+	// This saves 3-5K tokens per large read by spilling to artifact and keeping only
+	// the tail inline. Revert by uncommenting the early return below if read output
+	// quality degrades or if the model struggles with artifact references for reads.
+	// if (toolName === "read") return result;
 	const { threshold, tailBytes, tailLines } = getSpillConfig(context?.settings);
 
 	// Skip if tool already saved an artifact

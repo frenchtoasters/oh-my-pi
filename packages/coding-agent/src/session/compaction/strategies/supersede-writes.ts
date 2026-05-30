@@ -23,17 +23,26 @@ export function supersedeWrites(
 	// Pre-compile globs for protected file patterns
 	const protectedGlobs = config.protectedFilePatterns.map(pattern => new Bun.Glob(pattern));
 
-	// 1. Scan for all "read" operations and record the last index per file
+	// 1. Scan for all "read" and "write" operations and record the last index per file
 	const lastReadIndex: Map<string, number> = new Map();
+	// Track the last write index per file for write→write superseding
+	const lastWriteIndex: Map<string, number> = new Map();
 
 	for (let i = 0; i < messages.length; i++) {
 		const msg = messages[i];
 		if (msg.role === "assistant") {
 			for (const content of msg.content) {
-				if (content.type === "toolCall" && config.readTools.includes(content.name)) {
-					const targetPath = content.arguments?.path;
-					if (typeof targetPath === "string") {
-						lastReadIndex.set(targetPath, i);
+				if (content.type === "toolCall") {
+					if (config.readTools.includes(content.name)) {
+						const targetPath = content.arguments?.path;
+						if (typeof targetPath === "string") {
+							lastReadIndex.set(targetPath, i);
+						}
+					} else if (config.writeTools.includes(content.name)) {
+						const targetPath = content.arguments?.path;
+						if (typeof targetPath === "string") {
+							lastWriteIndex.set(targetPath, i);
+						}
 					}
 				}
 			}
@@ -41,8 +50,7 @@ export function supersedeWrites(
 	}
 
 	const supersededToolCallIds = new Set<string>();
-
-	// 2. Identify writes superseded by a subsequent read of the same file
+	// 2. Identify writes superseded by a subsequent read OR a subsequent write to the same file
 	for (let i = 0; i < messages.length; i++) {
 		const msg = messages[i];
 		if (msg.role === "assistant") {
@@ -51,7 +59,9 @@ export function supersedeWrites(
 					const targetPath = content.arguments?.path;
 					if (typeof targetPath === "string" && !protectedGlobs.some(glob => glob.match(targetPath))) {
 						const lastRead = lastReadIndex.get(targetPath);
-						if (lastRead !== undefined && lastRead > i) {
+						const lastWrite = lastWriteIndex.get(targetPath);
+						// Superseded if: a later read exists, OR a later write exists (write→write overwrite)
+						if ((lastRead !== undefined && lastRead > i) || (lastWrite !== undefined && lastWrite > i)) {
 							supersededToolCallIds.add(content.id);
 						}
 					}
@@ -75,7 +85,7 @@ export function supersedeWrites(
 							...content,
 							arguments: {
 								_pruned: true,
-								_reason: "superseded-by-read",
+								_reason: "superseded",
 								path: content.arguments?.path,
 							},
 						} satisfies ToolCall;
@@ -88,7 +98,7 @@ export function supersedeWrites(
 		if (msg.role === "toolResult" && supersededToolCallIds.has(msg.toolCallId)) {
 			return {
 				...msg,
-				content: [{ type: "text", text: "[Write output superseded - file was subsequently read]" }],
+				content: [{ type: "text", text: "[Write output superseded - file was subsequently modified or read]" }],
 			};
 		}
 
