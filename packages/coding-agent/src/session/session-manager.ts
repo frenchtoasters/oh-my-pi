@@ -50,6 +50,7 @@ import {
 } from "./messages";
 import type { SessionStorage, SessionStorageWriter } from "./session-storage";
 import { FileSessionStorage, MemorySessionStorage } from "./session-storage";
+import { validateSessionWorktree } from "./session-worktree";
 
 export const CURRENT_SESSION_VERSION = 3;
 
@@ -62,6 +63,10 @@ export interface SessionHeader {
 	timestamp: string;
 	cwd: string;
 	parentSession?: string;
+	/** Active session worktree slug, if session is in a worktree. */
+	worktreeSlug?: string;
+	/** Original repo root when in a worktree. */
+	worktreeRepoRoot?: string;
 }
 
 export interface NewSessionOptions {
@@ -287,6 +292,8 @@ export type ReadonlySessionManager = Pick<
 	| "getEntries"
 	| "getTree"
 	| "getUsageStatistics"
+	| "getWorktreeSlug"
+	| "getWorktreeRepoRoot"
 	| "putBlob"
 >;
 
@@ -1869,6 +1876,21 @@ export class SessionManager {
 			this.#sessionId = header?.id ?? createSessionId();
 			this.#sessionName = header?.title;
 			this.#titleSource = header?.titleSource;
+			// Validate worktree still exists on resume
+			if (header?.worktreeSlug && header?.worktreeRepoRoot) {
+				const valid = await validateSessionWorktree(header.worktreeRepoRoot, header.worktreeSlug);
+				if (!valid) {
+					logger.warn("Session worktree no longer exists, clearing", { slug: header.worktreeSlug });
+					// Clear worktree entries from header
+					const headerIdx = this.#fileEntries.findIndex(e => e.type === "session");
+					if (headerIdx >= 0) {
+						const h = this.#fileEntries[headerIdx] as SessionHeader;
+						delete h.worktreeSlug;
+						delete h.worktreeRepoRoot;
+						this.#needsFullRewriteOnNextPersist = true;
+					}
+				}
+			}
 
 			this.#needsFullRewriteOnNextPersist = migrateToCurrentVersion(this.#fileEntries);
 
@@ -2324,6 +2346,34 @@ export class SessionManager {
 	/** Get usage statistics across all assistant messages in the session. */
 	getUsageStatistics(): UsageStatistics {
 		return this.#usageStatistics;
+	}
+
+	setWorktreeSlug(slug: string, repoRoot: string): void {
+		const header = this.#fileEntries.find(e => e.type === "session") as SessionHeader | undefined;
+		if (header) {
+			header.worktreeSlug = slug;
+			header.worktreeRepoRoot = repoRoot;
+		}
+		this.#needsFullRewriteOnNextPersist = true;
+	}
+
+	clearWorktreeSlug(): void {
+		const header = this.#fileEntries.find(e => e.type === "session") as SessionHeader | undefined;
+		if (header) {
+			delete header.worktreeSlug;
+			delete header.worktreeRepoRoot;
+		}
+		this.#needsFullRewriteOnNextPersist = true;
+	}
+
+	getWorktreeSlug(): string | undefined {
+		const header = this.#fileEntries.find(e => e.type === "session") as SessionHeader | undefined;
+		return header?.worktreeSlug;
+	}
+
+	getWorktreeRepoRoot(): string | undefined {
+		const header = this.#fileEntries.find(e => e.type === "session") as SessionHeader | undefined;
+		return header?.worktreeRepoRoot;
 	}
 
 	getSessionDir(): string {
@@ -2901,7 +2951,6 @@ export class SessionManager {
 	buildSessionContext(): SessionContext {
 		return buildSessionContext(this.getEntries(), this.#leafId, this.#byId);
 	}
-
 
 	/**
 	 * Get session header.

@@ -208,6 +208,10 @@ export interface CreateAgentSessionOptions {
 	promptTemplates?: PromptTemplate[];
 	/** File-based slash commands. Default: discovered from commands/ directories */
 	slashCommands?: FileSlashCommand[];
+	/** Pre-computed AGENTS.md search (skips filesystem scan when provided). */
+	agentsMdSearch?: AgentsMdSearch;
+	/** Pre-computed workspace tree (skips directory scan when provided). */
+	workspaceTree?: WorkspaceTree;
 
 	/** Enable MCP server discovery from .mcp.json files. Default: true */
 	enableMCP?: boolean;
@@ -692,9 +696,13 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	}
 	// Kick off AGENTS.md filesystem search in parallel — it is the slowest piece of buildSystemPrompt
 	// (~200ms on large repos) and only needs `cwd`, so it can overlap with everything that follows.
-	const agentsMdSearchPromise: Promise<AgentsMdSearch> = logger.time("buildAgentsMdSearch", buildAgentsMdSearch, cwd);
+	const agentsMdSearchPromise: Promise<AgentsMdSearch> = options.agentsMdSearch
+		? Promise.resolve(options.agentsMdSearch)
+		: logger.time("buildAgentsMdSearch", buildAgentsMdSearch, cwd);
 	agentsMdSearchPromise.catch(() => {});
-	const workspaceTreePromise: Promise<WorkspaceTree> = logger.time("buildWorkspaceTree", buildWorkspaceTree, cwd);
+	const workspaceTreePromise: Promise<WorkspaceTree> = options.workspaceTree
+		? Promise.resolve(options.workspaceTree)
+		: logger.time("buildWorkspaceTree", buildWorkspaceTree, cwd);
 	workspaceTreePromise.catch(() => {});
 
 	// Independent discoveries that depend only on cwd/agentDir — kicked off in parallel and awaited
@@ -1038,6 +1046,9 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			authStorage,
 			modelRegistry,
 			asyncJobManager,
+		};
+		toolSession.updateCwd = (newCwd: string) => {
+			toolSession.cwd = newCwd;
 		};
 
 		// ── Sandbox initialization ──────────────────────────────────────────
@@ -1730,6 +1741,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			asyncJobManager,
 			agentId: resolvedAgentId,
 			agentRegistry,
+			updateToolSessionCwd: toolSession.updateCwd,
 		});
 		hasSession = true;
 
@@ -1757,7 +1769,6 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 				}
 			};
 		}
-
 
 		// Start LSP warmup in the background so startup does not block on language server initialization.
 		let lspServers: CreateAgentSessionResult["lspServers"];
@@ -1848,6 +1859,21 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 				);
 			});
 		}
+
+		// Populate cached discovery results on toolSession so TaskTool can forward them to subagents.
+		toolSession.preloadedExtensions = extensionsResult;
+		// Note: TTSR conditional rules are excluded; subagents don't support triggered rule injection.
+		toolSession.rules = [...rulebookRules, ...alwaysApplyRules];
+		toolSession.slashCommands = slashCommands;
+		// Resolve promises (already settled by this point since buildSystemPrompt consumed them)
+		toolSession.agentsMdSearch = await agentsMdSearchPromise.catch(err => {
+			logger.warn("Failed to cache agentsMdSearch for subagent reuse", { error: err });
+			return undefined;
+		});
+		toolSession.workspaceTree = await workspaceTreePromise.catch(err => {
+			logger.warn("Failed to cache workspaceTree for subagent reuse", { error: err });
+			return undefined;
+		});
 
 		return {
 			session,

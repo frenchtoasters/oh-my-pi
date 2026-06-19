@@ -46,6 +46,7 @@ export interface SegmentContext {
 		branch: string | null;
 		status: { staged: number; unstaged: number; untracked: number } | null;
 		pr: { number: number; url: string } | null;
+		worktreeSlug: string | null;
 	};
 }
 

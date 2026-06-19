@@ -1,6 +1,6 @@
 ---
 name: explore
-description: Fast read-only codebase scout returning compressed context for handoff
+description: "Use proactively for any codebase investigation: searching, reading, understanding code. Returns compressed context for handoff. Fast and cheap."
 tools: read, search, find, web_search
 model: pi/smol
 thinking-level: med

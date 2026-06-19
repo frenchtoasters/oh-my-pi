@@ -20,7 +20,7 @@ import { getWorktreesDir, isEnoent } from "@oh-my-pi/pi-utils";
 import chalk from "chalk";
 import * as git from "../utils/git";
 
-type WorktreeKind = "pr-checkout" | "task-isolation" | "empty" | "stray";
+type WorktreeKind = "pr-checkout" | "task-isolation" | "session-worktree" | "empty" | "stray";
 
 export interface WorktreeEntry {
 	/** Absolute path to the worktree dir (or stray container) under `~/.omp/wt/`. */
@@ -72,7 +72,12 @@ export async function listWorktrees(options: ListWorktreesOptions): Promise<void
 
 export async function clearWorktrees(options: ClearWorktreesOptions): Promise<void> {
 	const entries = await scanWorktrees();
-	const targets = options.all ? entries : entries.filter(entry => entry.orphanReason !== undefined);
+	const targets = options.all
+		? entries
+		: entries.filter(entry => {
+				if (entry.kind === "session-worktree") return false;
+				return entry.orphanReason !== undefined;
+			});
 
 	if (targets.length === 0) {
 		if (options.json) {
@@ -207,7 +212,11 @@ async function classifyDir(dir: string): Promise<WorktreeEntry | null> {
 	const gitEntry = path.join(dir, ".git");
 	const gitStat = await fs.stat(gitEntry).catch(() => null);
 	if (gitStat?.isFile()) {
-		return classifyPrCheckout(dir, gitEntry);
+		const entry = await classifyPrCheckout(dir, gitEntry);
+		if (entry.branch?.startsWith("omp/session/")) {
+			return { ...entry, kind: "session-worktree" };
+		}
+		return entry;
 	}
 	const mergedStat = await fs.stat(path.join(dir, "merged")).catch(() => null);
 	if (mergedStat?.isDirectory()) {
@@ -281,6 +290,9 @@ function formatEntryDetail(entry: WorktreeEntry): string {
 		parts.push(`${repo} · ${branch}`);
 	} else if (entry.kind === "task-isolation") {
 		parts.push("task-isolation sandbox");
+	} else if (entry.kind === "session-worktree") {
+		const slug = entry.branch?.replace("omp/session/", "") ?? "unknown";
+		parts.push(`session worktree: ${slug}`);
 	} else if (entry.kind === "empty") {
 		parts.push("legacy project shell");
 	} else {

@@ -139,6 +139,12 @@ const gitSegment: StatusLineSegment = {
 			content = withIcon(theme.icon.branch, branch);
 		}
 
+		// Show worktree slug if present
+		if (ctx.git.worktreeSlug) {
+			const wtLabel = theme.fg("dim", `[wt:${ctx.git.worktreeSlug}]`);
+			content = content ? `${content} ${wtLabel}` : wtLabel;
+		}
+
 		// Add status indicators
 		if (gitStatus) {
 			const indicators: string[] = [];

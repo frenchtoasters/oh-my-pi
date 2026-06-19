@@ -344,6 +344,7 @@ export class StatusLineComponent implements Component {
 				branch: this.#getCurrentBranch(),
 				status: this.#getGitStatus(),
 				pr: this.#lookupPr(),
+				worktreeSlug: this.session.sessionManager?.getWorktreeSlug() ?? null,
 			},
 		};
 	}

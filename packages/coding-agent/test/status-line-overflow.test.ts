@@ -62,6 +62,7 @@ function createCtx(overrides?: { pathMaxLength?: number; branch?: string | null 
 			branch: overrides?.branch ?? null,
 			status: null,
 			pr: null,
+			worktreeSlug: null,
 		},
 	};
 }

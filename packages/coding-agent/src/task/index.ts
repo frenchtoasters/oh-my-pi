@@ -37,6 +37,7 @@ import { resolveIsolationBackendForTaskExecution } from "./isolation-backend";
 import { AgentOutputManager } from "./output-manager";
 import { mapWithConcurrencyLimit, Semaphore } from "./parallel";
 import { renderResult, renderCall as renderTaskCall } from "./render";
+import { SubagentSessionFactory } from "./session-factory";
 import { getTaskSimpleModeCapabilities, type TaskSimpleMode } from "./simple-mode";
 import { renderTemplate } from "./template";
 import {
@@ -109,6 +110,7 @@ export { loadBundledAgents as BUNDLED_AGENTS } from "./agents";
 export { discoverCommands, expandCommand, getCommand } from "./commands";
 export { discoverAgents, getAgent } from "./discovery";
 export { AgentOutputManager } from "./output-manager";
+export { type CachedDiscovery, SubagentSessionFactory, type SubagentSessionFactoryOptions } from "./session-factory";
 export type {
 	AgentDefinition,
 	AgentProgress,
@@ -201,6 +203,7 @@ export class TaskTool implements AgentTool<TSchema, TaskToolDetails, Theme> {
 	readonly renderResult = renderResult;
 	readonly #discoveredAgents: AgentDefinition[];
 	readonly #blockedAgent: string | undefined;
+	#sessionFactory?: SubagentSessionFactory;
 
 	get parameters(): TSchema {
 		const isolationEnabled = this.session.settings.get("task.isolation.mode") !== "none";
@@ -235,6 +238,21 @@ export class TaskTool implements AgentTool<TSchema, TaskToolDetails, Theme> {
 
 	#getTaskSimpleMode(): TaskSimpleMode {
 		return this.session.settings.get("task.simple");
+	}
+
+	/** Lazily create the session factory from parent's cached discoveries. */
+	#getSessionFactory(): SubagentSessionFactory {
+		if (!this.#sessionFactory) {
+			this.#sessionFactory = new SubagentSessionFactory({
+				cwd: this.session.cwd,
+				preloadedExtensions: this.session.preloadedExtensions,
+				rules: this.session.rules,
+				slashCommands: this.session.slashCommands,
+				agentsMdSearch: this.session.agentsMdSearch,
+				workspaceTree: this.session.workspaceTree,
+			});
+		}
+		return this.#sessionFactory;
 	}
 
 	/**
@@ -833,6 +851,9 @@ export class TaskTool implements AgentTool<TSchema, TaskToolDetails, Theme> {
 			}
 			emitProgress();
 
+			const factory = this.#getSessionFactory();
+			const cached = factory.getCachedDiscovery(this.session.cwd);
+
 			const runTask = async (task: (typeof tasksWithContext)[number], index: number) => {
 				if (!isIsolated) {
 					return runSubprocess({
@@ -869,6 +890,11 @@ export class TaskTool implements AgentTool<TSchema, TaskToolDetails, Theme> {
 						promptTemplates,
 						localProtocolOptions,
 						parentHindsightSessionState: this.session.getHindsightSessionState?.(),
+						preloadedExtensions: cached?.preloadedExtensions,
+						rules: cached?.rules,
+						slashCommands: cached?.slashCommands,
+						agentsMdSearch: cached?.agentsMdSearch,
+						workspaceTree: cached?.workspaceTree,
 					});
 				}
 
@@ -889,6 +915,7 @@ export class TaskTool implements AgentTool<TSchema, TaskToolDetails, Theme> {
 						await applyBaseline(isolationDir, taskBaseline);
 					}
 
+					const isolatedCached = factory.getCachedDiscovery(isolationDir);
 					const result = await runSubprocess({
 						cwd: this.session.cwd,
 						worktree: isolationDir,
@@ -924,6 +951,11 @@ export class TaskTool implements AgentTool<TSchema, TaskToolDetails, Theme> {
 						promptTemplates,
 						localProtocolOptions,
 						parentHindsightSessionState: this.session.getHindsightSessionState?.(),
+						preloadedExtensions: isolatedCached?.preloadedExtensions,
+						rules: isolatedCached?.rules,
+						slashCommands: isolatedCached?.slashCommands,
+						agentsMdSearch: isolatedCached?.agentsMdSearch,
+						workspaceTree: isolatedCached?.workspaceTree,
 					});
 					if (mergeMode === "branch" && result.exitCode === 0) {
 						try {

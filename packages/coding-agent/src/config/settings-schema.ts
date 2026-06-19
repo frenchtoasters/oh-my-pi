@@ -1105,7 +1105,8 @@ export const SETTINGS_SCHEMA = {
 		ui: {
 			tab: "context",
 			label: "Idle Compaction Delay",
-			description: "Seconds to wait while idle before compacting (default raised to 45min to preserve prompt cache during test sessions)",
+			description:
+				"Seconds to wait while idle before compacting (default raised to 45min to preserve prompt cache during test sessions)",
 			options: [
 				{ value: "60", label: "1 minute" },
 				{ value: "120", label: "2 minutes" },
@@ -1596,7 +1597,7 @@ export const SETTINGS_SCHEMA = {
 	// Bash interceptor
 	"bashInterceptor.enabled": {
 		type: "boolean",
-		default: false,
+		default: true,
 		ui: { tab: "editing", label: "Bash Interceptor", description: "Block shell commands that have dedicated tools" },
 	},
 	"bashInterceptor.patterns": { type: "array", default: DEFAULT_BASH_INTERCEPTOR_RULES },
@@ -2125,6 +2126,24 @@ export const SETTINGS_SCHEMA = {
 			options: [
 				{ value: "generic", label: "Generic", description: "Static commit message" },
 				{ value: "ai", label: "AI", description: "AI-generated commit message from diff" },
+			],
+		},
+	},
+
+	"task.worktree.defaultBranchType": {
+		type: "enum",
+		values: ["feature", "fix", "chore", "refactor", "docs"] as const,
+		default: "feature",
+		ui: {
+			tab: "tasks",
+			label: "Session Worktree Default Branch Type",
+			description: "Default branch prefix when finalizing a worktree (e.g. feature/slug, fix/slug)",
+			options: [
+				{ value: "feature", label: "Feature", description: "feature/<slug>" },
+				{ value: "fix", label: "Fix", description: "fix/<slug>" },
+				{ value: "chore", label: "Chore", description: "chore/<slug>" },
+				{ value: "refactor", label: "Refactor", description: "refactor/<slug>" },
+				{ value: "docs", label: "Docs", description: "docs/<slug>" },
 			],
 		},
 	},

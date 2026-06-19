@@ -668,6 +668,26 @@ const BUILTIN_SLASH_COMMAND_REGISTRY: ReadonlyArray<BuiltinSlashCommandSpec> = [
 		},
 	},
 	{
+		name: "worktree",
+		description: "Manage session worktrees for parallel isolated work",
+		subcommands: [
+			{ name: "new", description: "Create a new session worktree", usage: "<name>" },
+			{ name: "list", description: "List session worktrees for this project" },
+			{ name: "switch", description: "Switch to an existing worktree", usage: "<name>" },
+			{
+				name: "merge",
+				description: "Finalize worktree into a named branch for MR",
+				usage: "[name] [--type feature|fix|chore|refactor|docs] [--branch name] [--squash]",
+			},
+			{ name: "remove", description: "Remove a session worktree", usage: "<name> [--force]" },
+		],
+		allowArgs: true,
+		handle: async (command, runtime) => {
+			runtime.ctx.editor.setText("");
+			await runtime.ctx.handleWorktreeCommand(command.args.trim());
+		},
+	},
+	{
 		name: "exit",
 		description: "Exit the application",
 		handle: shutdownHandler,

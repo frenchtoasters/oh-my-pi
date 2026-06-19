@@ -137,6 +137,7 @@ export function detectOpenAICompat(model: Model<"openai-completions">, resolvedB
 		supportsStrictMode: detectStrictModeSupport(provider, baseUrl),
 		extraBody: undefined,
 		toolStrictMode: isCerebras ? "all_strict" : "mixed",
+		mergeSystemMessages: false,
 	};
 }
 
@@ -184,5 +185,6 @@ export function resolveOpenAICompat(
 		supportsStrictMode: model.compat.supportsStrictMode ?? detected.supportsStrictMode,
 		extraBody: model.compat.extraBody,
 		toolStrictMode: model.compat.toolStrictMode ?? detected.toolStrictMode,
+		mergeSystemMessages: model.compat.mergeSystemMessages ?? detected.mergeSystemMessages,
 	};
 }

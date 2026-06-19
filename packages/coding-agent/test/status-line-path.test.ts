@@ -49,6 +49,7 @@ function createPathContext(): SegmentContext {
 			branch: null,
 			status: null,
 			pr: null,
+			worktreeSlug: null,
 		},
 	};
 }

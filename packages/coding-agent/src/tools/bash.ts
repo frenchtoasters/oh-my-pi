@@ -516,7 +516,16 @@ export class BashTool implements AgentTool<BashToolSchema, BashToolDetails> {
 		// or the dedicated-tool command that follows the directory change.
 		if (this.session.settings.get("bashInterceptor.enabled")) {
 			const rules = this.session.settings.getBashInterceptorRules();
-			const commandsToCheck = rawCommand === command ? [command] : [rawCommand, command];
+			// Strip any leading `cd <path> &&` wrapper so the dedicated-tool command
+			// that follows is still matched even when the `cwd` param was provided
+			// (in which case the cwd-normalization above is skipped).
+			const stripLeadingCd = (cmd: string): string => {
+				const m = cmd.match(/^cd\s+(?:[^&\\]|\\.)+?\s*&&\s*/);
+				return m ? cmd.slice(m[0].length) : cmd;
+			};
+			const commandsToCheck = Array.from(
+				new Set([rawCommand, command, stripLeadingCd(rawCommand), stripLeadingCd(command)]),
+			);
 			for (const commandToCheck of commandsToCheck) {
 				const interception = checkBashInterception(commandToCheck, ctx?.toolNames ?? [], rules);
 				if (interception.block) {

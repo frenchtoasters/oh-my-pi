@@ -258,8 +258,8 @@ export class SlackBridge {
 			void this.#setThinkingStatus();
 		}
 
-		// Forward as a normal prompt
-		void this.#session.prompt(text, { expandPromptTemplates: true });
+		// Forward as a prompt — use followUp to queue if agent is already streaming
+		void this.#session.prompt(text, { expandPromptTemplates: true, streamingBehavior: "followUp" });
 	}
 
 	async #setThinkingStatus(): Promise<void> {

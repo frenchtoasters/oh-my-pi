@@ -6,7 +6,9 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { ThinkingLevel } from "@oh-my-pi/pi-agent-core";
 import type { ImageContent, Model, TextContent } from "@oh-my-pi/pi-ai";
+import piInsightsExtension from "@oh-my-pi/pi-insights";
 import type { KeyId } from "@oh-my-pi/pi-tui";
+import usageExtension from "@oh-my-pi/pi-usage";
 import { hasFsCode, isEacces, isEnoent, logger } from "@oh-my-pi/pi-utils";
 import type { TSchema } from "@sinclair/typebox";
 import * as TypeBox from "@sinclair/typebox";
@@ -30,6 +32,16 @@ import type {
 	RegisteredCommand,
 	ToolDefinition,
 } from "./types";
+
+/**
+ * Built-in extensions compiled into the binary. Always available without
+ * `--extension`/`-e`, regardless of cwd. Each can still be turned off via the
+ * disabled-extensions setting using its `extension-module:<name>` id.
+ */
+const BUILTIN_EXTENSIONS: ReadonlyArray<{ name: string; factory: ExtensionFactory }> = [
+	{ name: "pi-insights", factory: piInsightsExtension },
+	{ name: "pi-usage", factory: usageExtension },
+];
 
 type HandlerFn = (...args: unknown[]) => Promise<unknown>;
 
@@ -534,5 +546,28 @@ export async function discoverAndLoadExtensions(
 		addPath(resolved);
 	}
 
-	return loadExtensions(allPaths, cwd, eventBus);
+	const resolvedEventBus = eventBus ?? new EventBus();
+	const result = await loadExtensions(allPaths, cwd, resolvedEventBus);
+
+	// 4. Built-in extensions compiled into the binary (load into the same runtime).
+	for (const builtin of BUILTIN_EXTENSIONS) {
+		if (isDisabledName(builtin.name)) continue;
+		if (seen.has(builtin.name)) continue;
+		seen.add(builtin.name);
+		try {
+			const extension = await loadExtensionFromFactory(
+				builtin.factory,
+				cwd,
+				resolvedEventBus,
+				result.runtime,
+				builtin.name,
+			);
+			result.extensions.push(extension);
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			result.errors.push({ path: builtin.name, error: `Failed to load built-in extension: ${message}` });
+		}
+	}
+
+	return result;
 }

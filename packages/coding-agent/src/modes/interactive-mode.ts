@@ -1568,6 +1568,9 @@ export class InteractiveMode implements InteractiveModeContext {
 	handleMoveCommand(targetPath: string): Promise<void> {
 		return this.#commandController.handleMoveCommand(targetPath);
 	}
+	handleWorktreeCommand(args: string): Promise<void> {
+		return this.#commandController.handleWorktreeCommand(args);
+	}
 
 	handleRenameCommand(title: string): Promise<void> {
 		return this.#commandController.handleRenameCommand(title);

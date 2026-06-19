@@ -34,6 +34,7 @@ const compat: Required<OpenAICompat> = {
 	extraBody: {},
 	supportsStrictMode: true,
 	toolStrictMode: "none",
+	mergeSystemMessages: false,
 };
 
 function buildToolResult(toolCallId: string, timestamp: number): ToolResultMessage {

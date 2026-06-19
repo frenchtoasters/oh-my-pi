@@ -38,6 +38,7 @@ function createCtx(usage: Partial<SegmentContext["usageStats"]>): SegmentContext
 			branch: null,
 			status: null,
 			pr: null,
+			worktreeSlug: null,
 		},
 	};
 }

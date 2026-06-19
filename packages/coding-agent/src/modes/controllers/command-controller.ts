@@ -39,6 +39,16 @@ import { buildToolsMarkdown } from "../../modes/utils/tools-markdown";
 import type { AsyncJobSnapshotItem } from "../../session/agent-session";
 import type { AuthStorage } from "../../session/auth-storage";
 import type { NewSessionOptions } from "../../session/session-manager";
+import {
+	createSessionWorktree,
+	getSessionWorktreeDir,
+	listSessionWorktrees,
+	mergeSessionWorktree,
+	removeSessionWorktree,
+	validateSessionWorktree,
+	validateSlug,
+} from "../../session/session-worktree";
+import { getRepoRoot } from "../../task/worktree";
 import { outputMeta } from "../../tools/output-meta";
 import { resolveToCwd, stripOuterDoubleQuotes } from "../../tools/path-utils";
 import { replaceTabs } from "../../tools/render-utils";
@@ -1214,6 +1224,247 @@ export class CommandController {
 			}
 		}
 		this.ctx.ui.requestRender();
+	}
+
+	async handleWorktreeCommand(args: string): Promise<void> {
+		if (this.ctx.session.isStreaming) {
+			this.ctx.showWarning("Wait for the current response to finish or abort it before managing worktrees.");
+			return;
+		}
+
+		const parts = args.split(/\s+/);
+		const sub = parts[0] || "";
+		const rest = parts.slice(1).join(" ").trim();
+
+		switch (sub) {
+			case "new":
+				await this.#handleWorktreeNew(rest);
+				break;
+			case "list":
+				await this.#handleWorktreeList();
+				break;
+			case "switch":
+				await this.#handleWorktreeSwitch(rest);
+				break;
+			case "merge":
+				await this.#handleWorktreeMerge(rest);
+				break;
+			case "remove":
+				await this.#handleWorktreeRemove(rest);
+				break;
+			default:
+				this.ctx.showError("Usage: /worktree <new|list|switch|merge|remove> [args]");
+				break;
+		}
+	}
+
+	async #handleWorktreeNew(name: string): Promise<void> {
+		if (!name) {
+			this.ctx.showError("Usage: /worktree new <name>");
+			return;
+		}
+		try {
+			validateSlug(name);
+		} catch (err) {
+			this.ctx.showError(err instanceof Error ? err.message : String(err));
+			return;
+		}
+
+		const cwd = this.ctx.sessionManager.getCwd();
+		let repoRoot: string;
+		try {
+			repoRoot = await getRepoRoot(cwd);
+			repoRoot = this.ctx.sessionManager.getWorktreeRepoRoot() ?? repoRoot;
+		} catch {
+			this.ctx.showError("Not inside a git repository.");
+			return;
+		}
+
+		try {
+			const info = await createSessionWorktree(repoRoot, name, { transferDirtyState: false });
+			await this.handleMoveCommand(info.worktreeDir);
+			if (this.ctx.sessionManager.getCwd() !== info.worktreeDir) {
+				this.ctx.showError("Failed to switch to worktree directory.");
+				return;
+			}
+			this.ctx.sessionManager.setWorktreeSlug(name, repoRoot);
+			this.ctx.showStatus(`Session worktree created: ${name} (branch: ${info.branch})`);
+		} catch (err) {
+			this.ctx.showError(`Failed to create worktree: ${err instanceof Error ? err.message : String(err)}`);
+		}
+	}
+
+	async #handleWorktreeList(): Promise<void> {
+		const cwd = this.ctx.sessionManager.getCwd();
+		let repoRoot: string;
+		try {
+			repoRoot = await getRepoRoot(cwd);
+			repoRoot = this.ctx.sessionManager.getWorktreeRepoRoot() ?? repoRoot;
+		} catch {
+			this.ctx.showError("Not inside a git repository.");
+			return;
+		}
+
+		try {
+			const worktrees = await listSessionWorktrees(repoRoot);
+			if (worktrees.length === 0) {
+				this.ctx.showStatus("No session worktrees found for this project.");
+				return;
+			}
+			const lines = worktrees.map(wt => `  ${wt.slug} (branch: ${wt.branch})`);
+			this.ctx.showStatus(`Session worktrees:\n${lines.join("\n")}`);
+		} catch (err) {
+			this.ctx.showError(`Failed to list worktrees: ${err instanceof Error ? err.message : String(err)}`);
+		}
+	}
+
+	async #handleWorktreeSwitch(name: string): Promise<void> {
+		if (!name) {
+			this.ctx.showError("Usage: /worktree switch <name>");
+			return;
+		}
+
+		const cwd = this.ctx.sessionManager.getCwd();
+		let repoRoot: string;
+		try {
+			repoRoot = await getRepoRoot(cwd);
+			repoRoot = this.ctx.sessionManager.getWorktreeRepoRoot() ?? repoRoot;
+		} catch {
+			this.ctx.showError("Not inside a git repository.");
+			return;
+		}
+
+		const valid = await validateSessionWorktree(repoRoot, name);
+		if (!valid) {
+			this.ctx.showError(`Session worktree "${name}" does not exist or is invalid.`);
+			return;
+		}
+
+		const worktreeDir = getSessionWorktreeDir(repoRoot, name);
+		await this.handleMoveCommand(worktreeDir);
+		if (this.ctx.sessionManager.getCwd() !== worktreeDir) {
+			this.ctx.showError("Failed to switch to worktree directory.");
+			return;
+		}
+		this.ctx.sessionManager.setWorktreeSlug(name, repoRoot);
+		this.ctx.showStatus(`Switched to worktree: ${name}`);
+	}
+
+	async #handleWorktreeMerge(args: string): Promise<void> {
+		const parts = args.split(/\s+/);
+		let name = "";
+		let type: "feature" | "fix" | "chore" | "refactor" | "docs" | undefined;
+		let targetBranch: string | undefined;
+		let squash = false;
+
+		for (let i = 0; i < parts.length; i++) {
+			if (parts[i] === "--type" && i + 1 < parts.length) {
+				const val = parts[i + 1];
+				if (val === "feature" || val === "fix" || val === "chore" || val === "refactor" || val === "docs") {
+					type = val;
+				} else {
+					this.ctx.showError(`Invalid --type "${val}". Valid types: feature, fix, chore, refactor, docs.`);
+					return;
+				}
+				i++;
+			} else if (parts[i] === "--branch" && i + 1 < parts.length) {
+				targetBranch = parts[i + 1];
+				i++;
+			} else if (parts[i] === "--squash") {
+				squash = true;
+			} else if (parts[i]) {
+				name = parts[i];
+			}
+		}
+
+		if (!name) {
+			const slug = this.ctx.sessionManager.getWorktreeSlug();
+			if (!slug) {
+				this.ctx.showError(
+					"Not in a session worktree. Usage: /worktree merge [name] [--type feature|fix|chore] [--squash]\n" +
+						"When inside a worktree, just use: /worktree merge",
+				);
+				return;
+			}
+			name = slug;
+		}
+
+		// If user explicitly named a worktree that differs from current, nudge them
+		const currentSlug = this.ctx.sessionManager.getWorktreeSlug();
+		if (currentSlug && name !== currentSlug) {
+			this.ctx.showStatus(
+				`Note: You are in worktree "${currentSlug}" but merging "${name}". ` +
+					`Use just "/worktree merge" to merge the current worktree.`,
+			);
+		}
+
+		const cwd = this.ctx.sessionManager.getCwd();
+		let repoRoot: string;
+		try {
+			repoRoot = await getRepoRoot(cwd);
+			repoRoot = this.ctx.sessionManager.getWorktreeRepoRoot() ?? repoRoot;
+		} catch {
+			this.ctx.showError("Not inside a git repository.");
+			return;
+		}
+
+		// Move out of the worktree BEFORE merging. mergeSessionWorktree removes the
+		// worktree directory, and on some platforms (notably Windows) that fails if
+		// the current process cwd is still inside it. The worktree dir we're leaving.
+		const worktreeDir = getSessionWorktreeDir(repoRoot, name);
+		const wasInsideWorktree = this.ctx.sessionManager.getCwd() === worktreeDir;
+		const primaryRoot = this.ctx.sessionManager.getWorktreeRepoRoot() ?? repoRoot;
+		if (wasInsideWorktree) {
+			await this.handleMoveCommand(primaryRoot);
+		}
+
+		try {
+			const result = await mergeSessionWorktree(repoRoot, name, { type, targetBranch, squash });
+			this.ctx.sessionManager.clearWorktreeSlug();
+			this.ctx.showStatus(
+				`Worktree "${name}" finalized (based on ${result.baseBranch}).\n` +
+					`Branch "${result.targetBranch}" is ready to push:\n` +
+					`  git push -u origin ${result.targetBranch}`,
+			);
+		} catch (err) {
+			// On failure the worktree may have been rolled back (re-created). If we
+			// moved out and it still exists, move the user back so they can retry.
+			if (wasInsideWorktree && (await validateSessionWorktree(repoRoot, name))) {
+				await this.handleMoveCommand(worktreeDir);
+			}
+			this.ctx.showError(`Merge failed: ${err instanceof Error ? err.message : String(err)}`);
+		}
+	}
+
+	async #handleWorktreeRemove(args: string): Promise<void> {
+		const parts = args.split(/\s+/);
+		const force = parts.includes("--force");
+		const name = parts.filter(p => p !== "--force")[0];
+
+		if (!name) {
+			this.ctx.showError("Usage: /worktree remove <name> [--force]");
+			return;
+		}
+
+		const cwd = this.ctx.sessionManager.getCwd();
+		let repoRoot: string;
+		try {
+			repoRoot = await getRepoRoot(cwd);
+			repoRoot = this.ctx.sessionManager.getWorktreeRepoRoot() ?? repoRoot;
+		} catch {
+			this.ctx.showError("Not inside a git repository.");
+			return;
+		}
+
+		try {
+			await removeSessionWorktree(repoRoot, name, { force });
+			if (this.ctx.sessionManager.getWorktreeSlug() === name) {
+				this.ctx.sessionManager.clearWorktreeSlug();
+			}
+			this.ctx.showStatus(`Removed session worktree: ${name}`);
+		} catch (err) {
+			this.ctx.showError(`Remove failed: ${err instanceof Error ? err.message : String(err)}`);
+		}
 	}
 }
 

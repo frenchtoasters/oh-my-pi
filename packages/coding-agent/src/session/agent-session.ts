@@ -288,6 +288,8 @@ export interface AgentSessionConfig {
 	agentId?: string;
 	/** Shared agent registry (for forwarding IRC observations to the main session UI). */
 	agentRegistry?: AgentRegistry;
+	/** Callback to update tool session CWD after /move or worktree switch */
+	updateToolSessionCwd?: (cwd: string) => void;
 }
 
 /** Options for AgentSession.prompt() */
@@ -562,6 +564,19 @@ export class AgentSession {
 			writeTools: ["write", "edit"],
 			readTools: ["read"],
 		},
+		supersedeReads: {
+			writeTools: ["write", "edit"],
+			readTools: ["read"],
+			turnProtection: 3,
+		},
+		collapseBashRetries: {
+			minConsecutiveFailures: 2,
+			turnProtection: 2,
+		},
+		directoryListingExpiry: {
+			turnThreshold: 3,
+			readTools: ["read"],
+		},
 	};
 
 	#skills: Skill[];
@@ -627,6 +642,7 @@ export class AgentSession {
 	#streamingEditFileCache = new Map<string, string>();
 	#promptInFlightCount = 0;
 	#obfuscator: SecretObfuscator | undefined;
+	#updateToolSessionCwd: ((cwd: string) => void) | undefined;
 	#checkpointState: CheckpointState | undefined = undefined;
 	#pendingRewindReport: string | undefined = undefined;
 	#lastSuccessfulYieldToolCallId: string | undefined = undefined;
@@ -714,6 +730,7 @@ export class AgentSession {
 		);
 		this.#ttsrManager = config.ttsrManager;
 		this.#obfuscator = config.obfuscator;
+		this.#updateToolSessionCwd = config.updateToolSessionCwd;
 		this.#agentId = config.agentId;
 		this.#agentRegistry = config.agentRegistry;
 		this.agent.setAssistantMessageEventInterceptor((message, assistantMessageEvent) => {
@@ -787,6 +804,10 @@ export class AgentSession {
 		const previous = this.#hindsightSessionState;
 		this.#hindsightSessionState = state;
 		return previous;
+	}
+	/** Update the CWD seen by all tools. Called after /move or /worktree switch. */
+	updateToolSessionCwd(cwd: string): void {
+		this.#updateToolSessionCwd?.(cwd);
 	}
 
 	/** TTSR manager for time-traveling stream rules */

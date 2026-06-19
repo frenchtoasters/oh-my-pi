@@ -116,6 +116,8 @@ export type {
 export interface ToolSession {
 	/** Current working directory */
 	cwd: string;
+	/** Update the CWD seen by all tools. Called after /move or /worktree switch. */
+	updateCwd?: (newCwd: string) => void;
 	/** Whether UI is available */
 	hasUI: boolean;
 	/** Skip Python kernel availability check and warmup */
@@ -236,6 +238,16 @@ export interface ToolSession {
 	 *  Holds a per-path LRU of line content the model last observed, used to 3-way-merge edits when files change
 	 *  out-of-band. Lazily initialized by `getFileReadCache`. */
 	fileReadCache?: import("../edit/file-read-cache").FileReadCache;
+	/** Pre-loaded extension discovery result for subagent reuse. */
+	preloadedExtensions?: import("../extensibility/extensions/types").LoadExtensionsResult;
+	/** Pre-discovered rules for subagent reuse. */
+	rules?: import("../capability/rule").Rule[];
+	/** Pre-discovered slash commands for subagent reuse. */
+	slashCommands?: import("../extensibility/slash-commands").FileSlashCommand[];
+	/** Pre-computed AGENTS.md search result for subagent reuse. */
+	agentsMdSearch?: import("../system-prompt").AgentsMdSearch;
+	/** Pre-computed workspace tree for subagent reuse. */
+	workspaceTree?: import("../workspace-tree").WorkspaceTree;
 }
 
 export type ToolFactory = (session: ToolSession) => Tool | null | Promise<Tool | null>;

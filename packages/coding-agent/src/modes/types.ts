@@ -204,6 +204,7 @@ export interface InteractiveModeContext {
 	handleCompactCommand(customInstructions?: string): Promise<void>;
 	handleHandoffCommand(customInstructions?: string): Promise<void>;
 	handleMoveCommand(targetPath: string): Promise<void>;
+	handleWorktreeCommand(args: string): Promise<void>;
 	handleRenameCommand(title: string): Promise<void>;
 	handleMemoryCommand(text: string): Promise<void>;
 	handleSTTToggle(): Promise<void>;

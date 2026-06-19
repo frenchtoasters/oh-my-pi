@@ -488,6 +488,8 @@ export interface OpenAICompat {
 	supportsStrictMode?: boolean;
 	/** Whether tool schemas must be sent either all strict or all non-strict. Undefined keeps the existing per-tool mixed behavior. */
 	toolStrictMode?: "all_strict" | "none";
+	/** Whether multiple system messages should be merged into a single system message. Required by models whose chat templates only support one system message (e.g. Qwen via llama.cpp/vLLM). Default: false. */
+	mergeSystemMessages?: boolean;
 }
 
 /**

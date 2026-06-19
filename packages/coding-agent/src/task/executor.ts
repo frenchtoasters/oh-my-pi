@@ -9,6 +9,7 @@ import type { AgentEvent, ThinkingLevel } from "@oh-my-pi/pi-agent-core";
 import { logger, prompt, untilAborted } from "@oh-my-pi/pi-utils";
 import type { TSchema } from "@sinclair/typebox";
 import Ajv, { type ValidateFunction } from "ajv";
+import type { Rule } from "../capability/rule";
 import { ModelRegistry } from "../config/model-registry";
 import { resolveModelOverride } from "../config/model-resolver";
 import type { PromptTemplate } from "../config/prompt-templates";
@@ -16,7 +17,9 @@ import { Settings } from "../config/settings";
 import { SETTINGS_SCHEMA, type SettingPath } from "../config/settings-schema";
 import type { CustomTool } from "../extensibility/custom-tools/types";
 import { runExtensionCompact, runExtensionSetModel } from "../extensibility/extensions/compact-handler";
+import type { LoadExtensionsResult } from "../extensibility/extensions/types";
 import type { Skill } from "../extensibility/skills";
+import type { FileSlashCommand } from "../extensibility/slash-commands";
 import type { HindsightSessionState } from "../hindsight/state";
 import type { LocalProtocolOptions } from "../internal-urls";
 import { callTool } from "../mcp/client";
@@ -28,11 +31,13 @@ import { createAgentSession, discoverAuthStorage } from "../sdk";
 import type { AgentSession, AgentSessionEvent } from "../session/agent-session";
 import type { AuthStorage } from "../session/auth-storage";
 import { SessionManager } from "../session/session-manager";
+import type { AgentsMdSearch } from "../system-prompt";
 import { type ContextFileEntry, truncateTail } from "../tools";
 import { jtdToJsonSchema, normalizeSchema } from "../tools/jtd-to-json-schema";
 import { ToolAbortError } from "../tools/tool-errors";
 import type { EventBus } from "../utils/event-bus";
 import { buildNamedToolChoice } from "../utils/tool-choice";
+import type { WorkspaceTree } from "../workspace-tree";
 import { subprocessToolRegistry } from "./subprocess-tool-registry";
 import {
 	type AgentDefinition,
@@ -165,6 +170,18 @@ export interface ExecutorOptions {
 	/** Override local:// protocol options so subagent shares parent's local:// root */
 	localProtocolOptions?: LocalProtocolOptions;
 	parentHindsightSessionState?: HindsightSessionState;
+	/** Pre-loaded extension discovery result (skips filesystem scan). */
+	preloadedExtensions?: LoadExtensionsResult;
+	/** Pre-discovered rules (skips filesystem scan). */
+	rules?: Rule[];
+	/** Pre-discovered slash commands (skips filesystem scan). */
+	slashCommands?: FileSlashCommand[];
+	/** Disable extension discovery entirely. Ignored when preloadedExtensions is provided. */
+	disableExtensionDiscovery?: boolean;
+	/** Pre-computed AGENTS.md search result. */
+	agentsMdSearch?: AgentsMdSearch;
+	/** Pre-computed workspace tree. */
+	workspaceTree?: WorkspaceTree;
 }
 
 function parseStringifiedJson(value: unknown): unknown {
@@ -952,7 +969,9 @@ export async function runSubprocess(options: ExecutorOptions): Promise<SingleRes
 			const authStorage = options.authStorage ?? (await discoverAuthStorage());
 			checkAbort();
 			const modelRegistry = options.modelRegistry ?? new ModelRegistry(authStorage);
-			await modelRegistry.refresh();
+			if (!options.modelRegistry) {
+				await modelRegistry.refresh();
+			}
 			checkAbort();
 
 			const {
@@ -1023,6 +1042,12 @@ export async function runSubprocess(options: ExecutorOptions): Promise<SingleRes
 				mcpManager: options.mcpManager,
 				customTools: mcpProxyTools.length > 0 ? mcpProxyTools : undefined,
 				localProtocolOptions: options.localProtocolOptions,
+				preloadedExtensions: options.preloadedExtensions,
+				rules: options.rules,
+				slashCommands: options.slashCommands,
+				disableExtensionDiscovery: options.preloadedExtensions ? false : options.disableExtensionDiscovery,
+				agentsMdSearch: options.agentsMdSearch,
+				workspaceTree: options.workspaceTree,
 			});
 
 			activeSession = session;
