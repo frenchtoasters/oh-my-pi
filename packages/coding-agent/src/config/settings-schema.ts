@@ -1390,6 +1390,28 @@ export const SETTINGS_SCHEMA = {
 		},
 	},
 
+	// Ponytail (lazy-senior-dev ruleset)
+	"ponytail.enabled": {
+		type: "boolean",
+		default: false,
+		ui: {
+			tab: "context",
+			label: "Ponytail",
+			description: "Inject the ponytail lazy-senior-dev ruleset into the system prompt; adds /ponytail",
+		},
+	},
+
+	"ponytail.defaultMode": {
+		type: "enum",
+		values: ["off", "lite", "full", "ultra"] as const,
+		default: "full",
+		ui: {
+			tab: "context",
+			label: "Ponytail Default Mode",
+			description: "Starting intensity for ponytail (overridable per session via /ponytail)",
+		},
+	},
+
 	// Editing
 	// ────────────────────────────────────────────────────────────────────────
 
@@ -2813,6 +2835,11 @@ export interface TtsrSettings {
 	repeatGap: number;
 }
 
+export interface PonytailSettings {
+	enabled: boolean;
+	defaultMode: "off" | "lite" | "full" | "ultra";
+}
+
 export interface ExaSettings {
 	enabled: boolean;
 	enableSearch: boolean;
@@ -2871,6 +2898,7 @@ export interface GroupTypeMap {
 	skills: SkillsSettings;
 	commit: CommitSettings;
 	ttsr: TtsrSettings;
+	ponytail: PonytailSettings;
 	exa: ExaSettings;
 	statusLine: StatusLineSettings;
 	thinkingBudgets: ThinkingBudgetsSettings;

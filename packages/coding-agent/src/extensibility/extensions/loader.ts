@@ -7,6 +7,7 @@ import * as path from "node:path";
 import type { ThinkingLevel } from "@oh-my-pi/pi-agent-core";
 import type { ImageContent, Model, TextContent } from "@oh-my-pi/pi-ai";
 import piInsightsExtension from "@oh-my-pi/pi-insights";
+import ponytailExtension from "@oh-my-pi/ponytail";
 import type { KeyId } from "@oh-my-pi/pi-tui";
 import usageExtension from "@oh-my-pi/pi-usage";
 import { hasFsCode, isEacces, isEnoent, logger } from "@oh-my-pi/pi-utils";
@@ -41,6 +42,7 @@ import type {
 const BUILTIN_EXTENSIONS: ReadonlyArray<{ name: string; factory: ExtensionFactory }> = [
 	{ name: "pi-insights", factory: piInsightsExtension },
 	{ name: "pi-usage", factory: usageExtension },
+	{ name: "ponytail", factory: ponytailExtension },
 ];
 
 type HandlerFn = (...args: unknown[]) => Promise<unknown>;

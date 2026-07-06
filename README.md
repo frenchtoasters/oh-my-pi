@@ -244,6 +244,14 @@ Full Model Context Protocol support with external tool integration:
 - Hot-loadable plugins from `~/.omp/plugins/` with npm/bun integration
 - `disabledServers` works on both project-level and user-level third-party servers
 
+#### Optional plugins
+
+- **ponytail** ([`@dietrichgebert/ponytail`](https://github.com/DietrichGebert/ponytail)) is available as an external plugin but is **disabled by default** in this repo via [`.omp/plugin-overrides.json`](./.omp/plugin-overrides.json).
+  - Install: `omp plugin install @dietrichgebert/ponytail`
+  - Enable: `omp plugin enable @dietrichgebert/ponytail` (or remove it from the override's `disabled[]`)
+  - Disable again: `omp plugin disable @dietrichgebert/ponytail`
+  - Its lifecycle hooks need `node` on `PATH`; bundled skills work without it.
+
 ### + Web Search & Fetch
 
 <p align="center">

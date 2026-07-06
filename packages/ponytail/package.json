@@ -1,0 +1,55 @@
+{
+	"type": "module",
+	"name": "@oh-my-pi/ponytail",
+	"version": "0.1.0",
+	"description": "Ponytail lazy-senior-dev ruleset for oh-my-pi sessions (config-toggled, adapted for omp).",
+	"homepage": "https://github.com/DietrichGebert/ponytail",
+	"author": "Dietrich Gebert",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/DietrichGebert/ponytail.git"
+	},
+	"bugs": {
+		"url": "https://github.com/DietrichGebert/ponytail/issues"
+	},
+	"keywords": [
+		"ponytail",
+		"yagni",
+		"lazy",
+		"agent",
+		"extension"
+	],
+	"scripts": {
+		"check": "biome check . && bun run check:types",
+		"check:types": "tsgo -p tsconfig.json --noEmit",
+		"test": "bun test",
+		"lint": "biome lint .",
+		"fix": "biome check --write --unsafe .",
+		"fmt": "biome format --write ."
+	},
+	"dependencies": {
+		"@oh-my-pi/pi-coding-agent": "workspace:*"
+	},
+	"devDependencies": {
+		"@types/bun": "^1.3.13"
+	},
+	"engines": {
+		"bun": ">=1.3.7"
+	},
+	"omp": {
+		"extensions": [
+			"./src/extension.ts"
+		]
+	},
+	"exports": {
+		".": {
+			"types": "./src/extension.ts",
+			"import": "./src/extension.ts"
+		}
+	},
+	"files": [
+		"src",
+		"README.md"
+	]
+}

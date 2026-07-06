@@ -10,6 +10,8 @@
 - Added `omp worktree` command (alias `wt`) to list and manage agent-managed worktrees under `~/.omp/wt`
 - Added `omp worktree clear` to remove orphaned worktree directories, with `--all` to include live PR-checkouts, `--dry-run` for preview, and `--json` reporting
 - Added machine-readable JSON output to `omp worktree list` for scripted inspection
+- Added the config-toggled `ponytail` ruleset extension: `ponytail.enabled` (default `false`) gates injecting the lazy-senior-dev ruleset into the system prompt, `ponytail.defaultMode` (`off`/`lite`/`full`/`ultra`, default `full`) sets the starting intensity, and `/ponytail [lite|full|ultra|off]` switches/reports the per-session mode (persisted and restored on session start). The extension self-gates when disabled and returns the correct `string[]` system prompt. The upstream `@dietrichgebert/ponytail` npm plugin stays disabled (its own extension is incompatible with omp and is not executed)
+- Added global `ponytail-review`, `ponytail-audit`, `ponytail-debt`, `ponytail-gain`, and `ponytail-help` native skills under `.omp/skills/` (vendored from ponytail, MIT)
 
 ### Changed
 
