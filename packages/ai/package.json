@@ -97,10 +97,6 @@
 			"types": "./src/providers/openai-codex/*.ts",
 			"import": "./src/providers/openai-codex/*.ts"
 		},
-		"./usage/*": {
-			"types": "./src/usage/*.ts",
-			"import": "./src/usage/*.ts"
-		},
 		"./utils/*": {
 			"types": "./src/utils/*.ts",
 			"import": "./src/utils/*.ts"
