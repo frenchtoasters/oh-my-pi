@@ -10,21 +10,10 @@ import { Ellipsis, Hasher, type RenderCache, renderStatusLine, renderTreeList, t
 import type { ToolSession } from ".";
 import { formatCount, formatEmptyMessage, formatErrorMessage, PREVIEW_LIMITS, TRUNCATE_LENGTHS } from "./render-utils";
 
-// =============================================================================
-// Token Types
-// =============================================================================
-
-/** Supported arithmetic operators (** is exponentiation). */
+// Arithmetic operators (** is exponentiation). Token variants for the lexer.
 type Operator = "+" | "-" | "*" | "/" | "%" | "**";
-
-/**
- * Lexer token variants:
- * - number: parsed numeric value with original string for error messages
- * - operator: arithmetic operator
- * - paren: grouping parenthesis
- */
 type Token =
-	| { type: "number"; value: number; raw: string }
+	| { type: "number"; value: number }
 	| { type: "operator"; value: Operator }
 	| { type: "paren"; value: "(" | ")" };
 
@@ -44,336 +33,147 @@ export interface CalculatorToolDetails {
 }
 
 // =============================================================================
-// Character classification helpers for numeric literal parsing
-// =============================================================================
-
-function isDigit(ch: string): boolean {
-	return ch >= "0" && ch <= "9";
-}
-
-function isHexDigit(ch: string): boolean {
-	return (ch >= "0" && ch <= "9") || (ch >= "a" && ch <= "f") || (ch >= "A" && ch <= "F");
-}
-
-function isBinaryDigit(ch: string): boolean {
-	return ch === "0" || ch === "1";
-}
-
-function isOctalDigit(ch: string): boolean {
-	return ch >= "0" && ch <= "7";
-}
-
-// =============================================================================
 // Tokenizer
 // =============================================================================
 
 /**
- * Tokenize a math expression into numbers, operators, and parentheses.
- *
- * Number formats supported:
- * - Decimal: 123, 3.14, .5
- * - Scientific: 1e10, 2.5E-3
- * - Hexadecimal: 0xFF
- * - Binary: 0b1010
- * - Octal: 0o755
+ * Split an expression into number literals, operators, and parentheses.
+ * Numeric literals (decimal, hex `0x`, binary `0b`, octal `0o`, scientific)
+ * are matched greedily and converted with the platform `Number()` parser.
  */
-function tokenizeExpression(expression: string): Token[] {
+function tokenize(expression: string): Token[] {
 	const tokens: Token[] = [];
-	let i = 0;
-
-	while (i < expression.length) {
-		const ch = expression[i];
-
-		// Skip whitespace
-		if (ch.trim() === "") {
-			i += 1;
-			continue;
+	// Number, then `**`, then a single-char operator or paren.
+	const pattern =
+		/\s+|(0[xX][0-9a-fA-F]+|0[bB][01]+|0[oO][0-7]+|(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)|(\*\*|[-+*/%()])/g;
+	let cursor = 0;
+	for (let m = pattern.exec(expression); m; m = pattern.exec(expression)) {
+		if (m.index !== cursor) throw new Error(`Invalid character "${expression[cursor]}" in expression`);
+		cursor = pattern.lastIndex;
+		const [, num, op] = m;
+		if (num !== undefined) {
+			const value = Number(num);
+			if (!Number.isFinite(value)) throw new Error(`Invalid number "${num}"`);
+			tokens.push({ type: "number", value });
+		} else if (op === "(" || op === ")") {
+			tokens.push({ type: "paren", value: op });
+		} else if (op !== undefined) {
+			tokens.push({ type: "operator", value: op as Operator });
 		}
-
-		if (ch === "(" || ch === ")") {
-			tokens.push({ type: "paren", value: ch });
-			i += 1;
-			continue;
-		}
-
-		// Check ** before single * to handle exponentiation
-		if (ch === "*" && expression[i + 1] === "*") {
-			tokens.push({ type: "operator", value: "**" });
-			i += 2;
-			continue;
-		}
-
-		if (ch === "+" || ch === "-" || ch === "*" || ch === "/" || ch === "%") {
-			tokens.push({ type: "operator", value: ch });
-			i += 1;
-			continue;
-		}
-
-		// Number parsing: starts with digit or decimal point followed by digit
-		const next = expression[i + 1];
-		const numberStart = isDigit(ch) || (ch === "." && next !== undefined && isDigit(next));
-		if (!numberStart) {
-			throw new Error(`Invalid character "${ch}" in expression`);
-		}
-
-		const start = i;
-
-		// Handle prefixed literals (0x, 0b, 0o)
-		if (ch === "0" && next !== undefined) {
-			const prefix = next.toLowerCase();
-			if (prefix === "x" || prefix === "b" || prefix === "o") {
-				i += 2; // Skip "0x" / "0b" / "0o"
-				let hasDigit = false;
-				while (i < expression.length) {
-					const digit = expression[i];
-					const valid =
-						prefix === "x" ? isHexDigit(digit) : prefix === "b" ? isBinaryDigit(digit) : isOctalDigit(digit);
-					if (!valid) break;
-					hasDigit = true;
-					i += 1;
-				}
-
-				if (!hasDigit) {
-					throw new Error(`Invalid numeric literal starting at "${expression.slice(start, i)}"`);
-				}
-
-				const raw = expression.slice(start, i);
-				const value = Number(raw); // JS Number() handles 0x/0b/0o natively
-				if (!Number.isFinite(value)) {
-					throw new Error(`Invalid number "${raw}"`);
-				}
-				tokens.push({ type: "number", value, raw });
-				continue;
-			}
-		}
-
-		// Parse decimal number: integer part
-		let hasDigits = false;
-		while (i < expression.length && isDigit(expression[i])) {
-			hasDigits = true;
-			i += 1;
-		}
-
-		// Fractional part
-		if (expression[i] === ".") {
-			i += 1;
-			while (i < expression.length && isDigit(expression[i])) {
-				hasDigits = true;
-				i += 1;
-			}
-		}
-
-		if (!hasDigits) {
-			throw new Error(`Invalid number starting at "${expression.slice(start, i + 1)}"`);
-		}
-
-		// Scientific notation exponent (e.g., 1e10, 2.5E-3)
-		if (expression[i] === "e" || expression[i] === "E") {
-			i += 1;
-			if (expression[i] === "+" || expression[i] === "-") {
-				i += 1;
-			}
-
-			let hasExponentDigits = false;
-			while (i < expression.length && isDigit(expression[i])) {
-				hasExponentDigits = true;
-				i += 1;
-			}
-
-			if (!hasExponentDigits) {
-				throw new Error(`Invalid exponent in "${expression.slice(start, i)}"`);
-			}
-		}
-
-		const raw = expression.slice(start, i);
-		const value = Number(raw);
-		if (!Number.isFinite(value)) {
-			throw new Error(`Invalid number "${raw}"`);
-		}
-		tokens.push({ type: "number", value, raw });
 	}
-
+	if (cursor !== expression.length) throw new Error(`Invalid character "${expression[cursor]}" in expression`);
 	return tokens;
 }
 
 // =============================================================================
-// Recursive Descent Parser
+// Evaluator (shunting-yard to RPN, then fold)
 // =============================================================================
 
-/**
- * Recursive descent parser for arithmetic expressions.
- *
- * Operator precedence (lowest to highest):
- *   1. Addition, subtraction (+, -)
- *   2. Multiplication, division, modulo (*, /, %)
- *   3. Unary plus/minus (+x, -x)
- *   4. Exponentiation (**)
- *   5. Parentheses and literals
- *
- * Each precedence level has its own parse method. Lower precedence methods
- * call higher precedence methods, building the AST implicitly through
- * the call stack.
- */
-class ExpressionParser {
-	#index = 0;
+// Binary operator precedence and associativity. `**` is right-associative and
+// binds tighter than unary minus, matching JS (`-2 ** 2 === -4`).
+const BINARY: Record<Operator, { prec: number; right: boolean }> = {
+	"+": { prec: 1, right: false },
+	"-": { prec: 1, right: false },
+	"*": { prec: 2, right: false },
+	"/": { prec: 2, right: false },
+	"%": { prec: 2, right: false },
+	"**": { prec: 4, right: true },
+};
+const UNARY_PREC = 3;
 
-	constructor(private readonly tokens: Token[]) {}
-
-	/** Parse the full expression and ensure all tokens are consumed. */
-	parse(): number {
-		const value = this.#parseExpression();
-		if (this.#index < this.tokens.length) {
-			throw new Error("Unexpected token in expression");
-		}
-		return value;
+function apply(op: Operator | "u-", stack: number[]): void {
+	if (op === "u-") {
+		const a = stack.pop();
+		if (a === undefined) throw new Error("Unexpected end of expression");
+		stack.push(-a);
+		return;
 	}
-
-	/**
-	 * Parse addition and subtraction (lowest precedence).
-	 * Left-associative: 1 - 2 - 3 = (1 - 2) - 3
-	 */
-	#parseExpression(): number {
-		let value = this.#parseTerm();
-		while (true) {
-			if (this.#matchOperator("+")) {
-				value += this.#parseTerm();
-				continue;
-			}
-			if (this.#matchOperator("-")) {
-				value -= this.#parseTerm();
-				continue;
-			}
+	const b = stack.pop();
+	const a = stack.pop();
+	if (a === undefined || b === undefined) throw new Error("Unexpected end of expression");
+	switch (op) {
+		case "+":
+			stack.push(a + b);
 			break;
-		}
-		return value;
-	}
-
-	/**
-	 * Parse multiplication, division, and modulo.
-	 * Left-associative: 8 / 4 / 2 = (8 / 4) / 2
-	 */
-	#parseTerm(): number {
-		let value = this.#parseUnary();
-		while (true) {
-			if (this.#matchOperator("*")) {
-				value *= this.#parseUnary();
-				continue;
-			}
-			if (this.#matchOperator("/")) {
-				value /= this.#parseUnary();
-				continue;
-			}
-			if (this.#matchOperator("%")) {
-				value %= this.#parseUnary();
-				continue;
-			}
+		case "-":
+			stack.push(a - b);
 			break;
-		}
-		return value;
-	}
-
-	/**
-	 * Parse unary + and - operators.
-	 * Recursive to handle chained unary: --x, +-x
-	 */
-	#parseUnary(): number {
-		if (this.#matchOperator("+")) {
-			return this.#parseUnary();
-		}
-		if (this.#matchOperator("-")) {
-			return -this.#parseUnary();
-		}
-		return this.#parsePower();
-	}
-
-	/**
-	 * Parse exponentiation operator.
-	 * Right-associative: 2 ** 3 ** 2 = 2 ** (3 ** 2) = 512
-	 * Achieved by recursive call to parsePower for the right operand.
-	 */
-	#parsePower(): number {
-		let value = this.#parsePrimary();
-		if (this.#matchOperator("**")) {
-			value = value ** this.#parsePower(); // Right-associative via recursion
-		}
-		return value;
-	}
-
-	/**
-	 * Parse primary expressions: number literals and parenthesized subexpressions.
-	 * Parentheses restart parsing at lowest precedence (parseExpression).
-	 */
-	#parsePrimary(): number {
-		const token = this.#peek();
-		if (!token) {
-			throw new Error("Unexpected end of expression");
-		}
-
-		if (token.type === "number") {
-			this.#index += 1;
-			return token.value;
-		}
-
-		if (token.type === "paren" && token.value === "(") {
-			this.#index += 1;
-			const value = this.#parseExpression(); // Reset to lowest precedence
-			if (!this.#matchParen(")")) {
-				throw new Error("Missing closing parenthesis");
-			}
-			return value;
-		}
-
-		throw new Error("Unexpected token in expression");
-	}
-
-	/** Consume operator if it matches, advancing the token index. */
-	#matchOperator(value: Operator): boolean {
-		const token = this.tokens[this.#index];
-		if (token && token.type === "operator" && token.value === value) {
-			this.#index += 1;
-			return true;
-		}
-		return false;
-	}
-
-	/** Consume parenthesis if it matches, advancing the token index. */
-	#matchParen(value: "(" | ")"): boolean {
-		const token = this.tokens[this.#index];
-		if (token && token.type === "paren" && token.value === value) {
-			this.#index += 1;
-			return true;
-		}
-		return false;
-	}
-
-	/** Look at current token without consuming it. */
-	#peek(): Token | undefined {
-		return this.tokens[this.#index];
+		case "*":
+			stack.push(a * b);
+			break;
+		case "/":
+			stack.push(a / b);
+			break;
+		case "%":
+			stack.push(a % b);
+			break;
+		case "**":
+			stack.push(a ** b);
+			break;
 	}
 }
 
-// =============================================================================
-// Expression Evaluator
-// =============================================================================
-
-/**
- * Evaluate a math expression string and return the numeric result.
- *
- * Pipeline: expression string -> tokens -> parse tree (implicit) -> value
- *
- * @throws Error on syntax errors, empty expressions, or non-finite results (Infinity, NaN)
- */
 function evaluateExpression(expression: string): number {
-	const tokens = tokenizeExpression(expression);
-	if (tokens.length === 0) {
-		throw new Error("Expression is empty");
+	const tokens = tokenize(expression);
+	if (tokens.length === 0) throw new Error("Expression is empty");
+
+	const values: number[] = [];
+	const ops: Array<Operator | "u-" | "("> = [];
+	let expectOperand = true; // start, after "(", or after an operator
+
+	const popWhile = (test: (top: Operator | "u-") => boolean) => {
+		while (ops.length) {
+			const top = ops[ops.length - 1];
+			if (top === "(" || !test(top)) break;
+			apply(ops.pop() as Operator | "u-", values);
+		}
+	};
+
+	for (const token of tokens) {
+		if (token.type === "number") {
+			if (!expectOperand) throw new Error("Unexpected number in expression");
+			values.push(token.value);
+			expectOperand = false;
+			continue;
+		}
+		if (token.type === "paren") {
+			if (token.value === "(") {
+				ops.push("(");
+				expectOperand = true;
+			} else {
+				popWhile(() => true);
+				if (ops.pop() !== "(") throw new Error("Missing opening parenthesis");
+				expectOperand = false;
+			}
+			continue;
+		}
+		// operator
+		if (expectOperand) {
+			// Unary context: + is a no-op, - pushes a unary-minus operator.
+			if (token.value === "-") ops.push("u-");
+			else if (token.value !== "+") throw new Error(`Unexpected operator "${token.value}"`);
+			continue;
+		}
+		const { prec, right } = BINARY[token.value];
+		popWhile(
+			top =>
+				(top === "u-" ? UNARY_PREC : BINARY[top].prec) > prec ||
+				(!right && (top === "u-" ? UNARY_PREC : BINARY[top].prec) === prec),
+		);
+		ops.push(token.value);
+		expectOperand = true;
 	}
-	const parser = new ExpressionParser(tokens);
-	const value = parser.parse();
-	if (!Number.isFinite(value)) {
-		throw new Error("Expression result is not a finite number");
+
+	if (expectOperand) throw new Error("Unexpected end of expression");
+	while (ops.length) {
+		const op = ops.pop();
+		if (op === "(") throw new Error("Missing closing parenthesis");
+		apply(op as Operator | "u-", values);
 	}
-	// Normalize -0 to 0 for consistent output
+	if (values.length !== 1) throw new Error("Unexpected token in expression");
+
+	const value = values[0];
+	if (!Number.isFinite(value)) throw new Error("Expression result is not a finite number");
 	return Object.is(value, -0) ? 0 : value;
 }
 
