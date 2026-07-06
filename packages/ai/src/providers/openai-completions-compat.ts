@@ -40,6 +40,17 @@ export function detectOpenAICompat(model: Model<"openai-completions">, resolvedB
 
 	const isCerebras = provider === "cerebras" || baseUrl.includes("cerebras.ai");
 	const isZai = provider === "zai" || baseUrl.includes("api.z.ai");
+	// GLM is Z.AI's model family, but a GLM checkpoint served through a non-Z.AI host
+	// (e.g. a local exo/MLX endpoint serving mlx-community/GLM-5.2-mxfp4) speaks the
+	// model's native chat template rather than the Z.AI API. That template is
+	// DeepSeek-V3.2-derived: it reads top-level `enable_thinking` + `reasoning_effort`
+	// (not Z.AI's `thinking: {type}` object) and replays prior reasoning as
+	// `<think>…</think>` from `reasoning_content`. Dropping that replay on multi-turn
+	// tool-call continuations renders empty `<think></think>` blocks and corrupts the
+	// prompt, so such GLM endpoints need the DeepSeek-style reasoning replay + a
+	// chat-template thinking toggle.
+	const isGlmModel = /(^|[/:._-])glm[-.]?\d/i.test(model.id);
+	const isLocalGlm = isGlmModel && !isZai;
 	const isKilo = provider === "kilo" || baseUrl.includes("api.kilo.ai");
 	const isKimiModel = model.id.includes("moonshotai/kimi") || /^kimi[-.]/i.test(model.id);
 	const isAnthropicModel =
@@ -74,6 +85,7 @@ export function detectOpenAICompat(model: Model<"openai-completions">, resolvedB
 		baseUrl.includes("fireworks.ai") ||
 		isAlibaba ||
 		isZai ||
+		isLocalGlm ||
 		isKilo ||
 		isQwen;
 
@@ -112,13 +124,15 @@ export function detectOpenAICompat(model: Model<"openai-completions">, resolvedB
 		requiresAssistantAfterToolResult: false,
 		requiresThinkingAsText: isMistral,
 		requiresMistralToolIds: isMistral,
-		thinkingFormat: isZai
-			? "zai"
-			: provider === "openrouter" || baseUrl.includes("openrouter.ai")
-				? "openrouter"
-				: isAlibaba || isQwen
-					? "qwen"
-					: "openai",
+		thinkingFormat: isLocalGlm
+			? "qwen-chat-template"
+			: isZai
+				? "zai"
+				: provider === "openrouter" || baseUrl.includes("openrouter.ai")
+					? "openrouter"
+					: isAlibaba || isQwen
+						? "qwen"
+						: "openai",
 		reasoningContentField: "reasoning_content",
 		// Backends that 400 follow-up requests when prior assistant tool-call turns lack `reasoning_content`:
 		//   - Kimi: documented invariant on its native API and via OpenCode-Go.
@@ -129,10 +143,11 @@ export function detectOpenAICompat(model: Model<"openai-completions">, resolvedB
 		requiresReasoningContentForToolCalls:
 			isKimiModel ||
 			(isDeepseekFamily && Boolean(model.reasoning)) ||
+			(isLocalGlm && Boolean(model.reasoning)) ||
 			((provider === "openrouter" || baseUrl.includes("openrouter.ai")) && Boolean(model.reasoning)),
 		// DeepSeek V4 rejects synthetic reasoning_content placeholders (".") on tool-call turns.
 		// Kimi and OpenRouter accept them when actual reasoning is unavailable.
-		allowsSyntheticReasoningContentForToolCalls: !isDeepseekFamily || !model.reasoning,
+		allowsSyntheticReasoningContentForToolCalls: (!isDeepseekFamily && !isLocalGlm) || !model.reasoning,
 		requiresAssistantContentForToolCalls: isKimiModel,
 		supportsStrictMode: detectStrictModeSupport(provider, baseUrl),
 		extraBody: undefined,

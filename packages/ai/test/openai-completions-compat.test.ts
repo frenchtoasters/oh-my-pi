@@ -431,6 +431,38 @@ describe("kimi model detection via detectCompat", () => {
 		const compat = detectCompat(model);
 		expect(compat.requiresReasoningContentForToolCalls).toBe(true);
 	});
+	it("routes a locally-hosted GLM (e.g. exo/MLX) to the DeepSeek-style reasoning replay", () => {
+		const model: Model<"openai-completions"> = {
+			...getBundledModel("openai", "gpt-4o-mini"),
+			api: "openai-completions",
+			provider: "openai",
+			baseUrl: "http://localhost:52415/v1",
+			id: "mlx-community/GLM-5.2-mxfp4",
+			reasoning: true,
+		};
+		const compat = detectCompat(model);
+		expect(compat.thinkingFormat).toBe("qwen-chat-template");
+		expect(compat.requiresReasoningContentForToolCalls).toBe(true);
+		expect(compat.allowsSyntheticReasoningContentForToolCalls).toBe(false);
+		expect(compat.supportsDeveloperRole).toBe(false);
+		// GLM's chat template reads reasoning_effort, so keep effort support.
+		expect(compat.supportsReasoningEffort).toBe(true);
+	});
+
+	it("leaves Z.AI-hosted GLM on the native zai thinking format", () => {
+		const model: Model<"openai-completions"> = {
+			...getBundledModel("openai", "gpt-4o-mini"),
+			api: "openai-completions",
+			provider: "zai",
+			baseUrl: "https://api.z.ai/v1",
+			id: "glm-5",
+			reasoning: true,
+		};
+		const compat = detectCompat(model);
+		expect(compat.thinkingFormat).toBe("zai");
+		expect(compat.requiresReasoningContentForToolCalls).toBe(false);
+	});
+
 });
 
 describe("NVIDIA NIM DeepSeek special-token stripping", () => {
