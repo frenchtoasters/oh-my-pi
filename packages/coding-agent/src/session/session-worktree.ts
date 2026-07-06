@@ -297,10 +297,25 @@ export async function mergeSessionWorktree(
 	const aheadResult = await $`git -C ${repoRoot} rev-list --count ${`${baseBranch}..${sessionBranch}`}`.nothrow();
 	const aheadCount = aheadResult.exitCode === 0 ? Number.parseInt(aheadResult.text().trim(), 10) || 0 : 0;
 	if (aheadCount === 0) {
-		throw new Error(
-			`No commits to merge: branch "${sessionBranch}" has no commits beyond "${baseBranch}". ` +
-				`Commit your work in the worktree before merging (the session must contain at least one commit).`,
-		);
+		// Common failure mode: work was committed to the base branch (e.g. main)
+		// instead of the session branch — typically because the agent's tools ran
+		// in the wrong working directory. Detect commits on the base beyond its
+		// upstream so we can point the user at the real problem.
+		let hint = `Commit your work in the worktree before merging (the session must contain at least one commit).`;
+		const upstreamResult =
+			await $`git -C ${repoRoot} rev-parse --verify --quiet ${`${baseBranch}@{upstream}`}`.nothrow();
+		if (upstreamResult.exitCode === 0) {
+			const baseAheadResult =
+				await $`git -C ${repoRoot} rev-list --count ${`${baseBranch}@{upstream}..${baseBranch}`}`.nothrow();
+			const baseAhead = baseAheadResult.exitCode === 0 ? Number.parseInt(baseAheadResult.text().trim(), 10) || 0 : 0;
+			if (baseAhead > 0) {
+				hint =
+					`Found ${baseAhead} commit(s) on "${baseBranch}" that are not on the session branch — ` +
+					`your work may have landed on "${baseBranch}" instead of "${sessionBranch}". ` +
+					`Move those commits onto the session branch before merging.`;
+			}
+		}
+		throw new Error(`No commits to merge: branch "${sessionBranch}" has no commits beyond "${baseBranch}". ${hint}`);
 	}
 
 	// Optionally squash commits into one

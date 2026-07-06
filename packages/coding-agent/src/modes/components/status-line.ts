@@ -122,6 +122,17 @@ export class StatusLineComponent implements Component {
 		this.#setupGitWatcher();
 	}
 
+	/**
+	 * Re-point the git HEAD watcher and clear cached branch state. Call after the
+	 * session's working directory changes (e.g. /move, /worktree new|switch|merge)
+	 * so the status line reflects the branch of the new project dir rather than
+	 * the old one (whose HEAD file may no longer exist).
+	 */
+	refreshGitWatcher(): void {
+		this.#invalidateGitCaches();
+		this.#setupGitWatcher();
+	}
+
 	#setupGitWatcher(): void {
 		if (this.#gitWatcher) {
 			this.#gitWatcher.close();

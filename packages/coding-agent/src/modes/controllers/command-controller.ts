@@ -987,11 +987,19 @@ export class CommandController {
 		try {
 			await this.ctx.sessionManager.flush();
 			await this.ctx.sessionManager.moveTo(resolvedPath);
+			// Relocate the agent's tool execution (bash/edit/etc.) to the new dir.
+			// Tools resolve paths against the ToolSession cwd, not sessionManager.cwd,
+			// so without this the agent keeps operating in the previous directory
+			// (e.g. work lands on the original branch after /worktree new).
+			this.ctx.session.updateToolSessionCwd(resolvedPath);
 			setProjectDir(resolvedPath);
 			clearClaudePluginRootsCache(); // re-warms preloadedPluginRoots with new project dir (async)
 			resetCapabilities();
 			await this.ctx.refreshSlashCommandState(resolvedPath);
 
+			// Re-point the git HEAD watcher at the new project dir so the status
+			// line shows the correct branch (the old worktree HEAD may be gone).
+			this.ctx.statusLine.refreshGitWatcher();
 			this.ctx.statusLine.invalidate();
 			this.ctx.updateEditorTopBorder();
 
@@ -1421,6 +1429,10 @@ export class CommandController {
 		try {
 			const result = await mergeSessionWorktree(repoRoot, name, { type, targetBranch, squash });
 			this.ctx.sessionManager.clearWorktreeSlug();
+			// The session branch was renamed; refresh the status line so it reflects
+			// the branch we're now on (the base branch in the primary checkout).
+			this.ctx.statusLine.refreshGitWatcher();
+			this.ctx.statusLine.invalidate();
 			this.ctx.showStatus(
 				`Worktree "${name}" finalized (based on ${result.baseBranch}).\n` +
 					`Branch "${result.targetBranch}" is ready to push:\n` +
