@@ -53,15 +53,26 @@ impl SandboxCaps {
 		Self { inner: Arc::new(CapabilitySet::new()) }
 	}
 
-	/// Add a directory path with the specified access mode.
+	/// Add a filesystem path with the specified access mode.
 	///
-	/// Returns a new `SandboxCaps` with the path added.
+	/// Directories grant recursive (subtree) access; non-directory paths
+	/// (regular files, device nodes like `/dev/null`) grant single-file
+	/// access. Returns a new `SandboxCaps` with the path added.
 	#[napi]
 	pub fn allow_path(&self, path: String, mode: SandboxAccessMode) -> Result<SandboxCaps> {
-		let caps = (*self.inner)
-			.clone()
-			.allow_path(&path, AccessMode::from(mode))
-			.map_err(|e| Error::from_reason(format!("Failed to add path capability: {e}")))?;
+		let access = AccessMode::from(mode);
+		let base = (*self.inner).clone();
+		// Directories grant recursive access; anything else (regular files,
+		// device nodes such as /dev/null) must go through the file grant,
+		// since `allow_path` rejects non-directories with `ExpectedDirectory`.
+		let is_dir = std::path::Path::new(&path).is_dir();
+		let result = if is_dir {
+			base.allow_path(&path, access)
+		} else {
+			base.allow_file(&path, access)
+		};
+		let caps =
+			result.map_err(|e| Error::from_reason(format!("Failed to add path capability: {e}")))?;
 		Ok(Self { inner: Arc::new(caps) })
 	}
 

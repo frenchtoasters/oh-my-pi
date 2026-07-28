@@ -40,16 +40,15 @@ describe("Settings.isolated path collision (known limitation)", () => {
 	// design issue — createSubagentSettings works around it by removing
 	// conflicting child keys before passing to Settings.isolated.
 
-	it("child key corrupts parent scalar — demonstrates the bug createSubagentSettings prevents", () => {
+	it("sandbox mode and profile overrides no longer collide (separate keys)", () => {
 		const settings = Settings.isolated({
 			"security.sandbox": "enforce",
-			"security.sandbox.profileOverrides": {},
+			"security.sandboxProfiles": {},
 		});
 
-		// BUG: security.sandbox becomes { profileOverrides: {} } instead of "enforce"
-		const value = settings.get("security.sandbox");
-		expect(typeof value).toBe("object"); // documents the bug, not desired behavior
-		expect(value).not.toBe("enforce");
+		// security.sandbox stays a scalar; sandboxProfiles is a sibling key.
+		expect(settings.get("security.sandbox")).toBe("enforce");
+		expect(settings.get("security.sandboxProfiles")).toEqual({});
 	});
 
 	it("same collision affects todo.reminders", () => {
@@ -139,18 +138,13 @@ describe("createSubagentSettings sandbox mode propagation", () => {
 		expect(() => enforceSandboxAccess(session, path.join(testSubDir, "file.ts"), "read")).not.toThrow();
 	});
 
-	it("raw Settings.isolated still has the collision bug (our fix is in createSubagentSettings)", () => {
-		// Demonstrate what happens WITHOUT the createSubagentSettings fix.
-		// Settings.isolated itself does NOT handle the collision — it's the
-		// createSubagentSettings dedup that prevents this from being reached.
+	it("sandbox mode survives alongside profile overrides (no collision)", () => {
 		const rawSettings = Settings.isolated({
 			"security.sandbox": "enforce",
-			"security.sandbox.profileOverrides": { explore: { fs: [], network: "blocked" } },
+			"security.sandboxProfiles": { explore: { fs: [], network: "blocked" } },
 		});
 
-		const value = rawSettings.get("security.sandbox");
-		// The underlying bug: value is an object, not "enforce"
-		expect(typeof value).toBe("object");
-		expect(value).not.toBe("enforce");
+		expect(rawSettings.get("security.sandbox")).toBe("enforce");
+		expect(rawSettings.get("security.sandboxProfiles")).toEqual({ explore: { fs: [], network: "blocked" } });
 	});
 });

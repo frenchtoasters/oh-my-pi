@@ -6,6 +6,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { ThinkingLevel } from "@oh-my-pi/pi-agent-core";
 import type { ImageContent, Model, TextContent } from "@oh-my-pi/pi-ai";
+import daybookExtension from "@oh-my-pi/pi-daybook";
 import piInsightsExtension from "@oh-my-pi/pi-insights";
 import ponytailExtension from "@oh-my-pi/ponytail";
 import type { KeyId } from "@oh-my-pi/pi-tui";
@@ -40,6 +41,7 @@ import type {
  * disabled-extensions setting using its `extension-module:<name>` id.
  */
 const BUILTIN_EXTENSIONS: ReadonlyArray<{ name: string; factory: ExtensionFactory }> = [
+	{ name: "pi-daybook", factory: daybookExtension },
 	{ name: "pi-insights", factory: piInsightsExtension },
 	{ name: "pi-usage", factory: usageExtension },
 	{ name: "ponytail", factory: ponytailExtension },

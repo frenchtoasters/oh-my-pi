@@ -125,9 +125,11 @@ export declare class SandboxCaps {
   /** Create a new empty capability set (denies everything by default). */
   constructor()
   /**
-   * Add a directory path with the specified access mode.
+   * Add a filesystem path with the specified access mode.
    *
-   * Returns a new `SandboxCaps` with the path added.
+   * Directories grant recursive (subtree) access; non-directory paths
+   * (regular files, device nodes like `/dev/null`) grant single-file
+   * access. Returns a new `SandboxCaps` with the path added.
    */
   allowPath(path: string, mode: SandboxAccessMode): SandboxCaps
   /** Block all network access. */

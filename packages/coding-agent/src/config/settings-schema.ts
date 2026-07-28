@@ -1412,6 +1412,16 @@ export const SETTINGS_SCHEMA = {
 		},
 	},
 
+	"daybook.folder": {
+		type: "string",
+		default: undefined,
+		ui: {
+			tab: "tools",
+			label: "Daybook Folder",
+			description: "Output directory for /daybook notes (default ~/Obsidian/Daily Notes)",
+		},
+	},
+
 	// Editing
 	// ────────────────────────────────────────────────────────────────────────
 
@@ -2621,7 +2631,7 @@ export const SETTINGS_SCHEMA = {
 		},
 	},
 
-	"security.sandbox.profileOverrides": {
+	"security.sandboxProfiles": {
 		type: "record",
 		default: {} as Record<string, unknown>,
 		ui: {
@@ -2918,7 +2928,7 @@ export interface SecuritySettings {
 	tlsRejectUnauthorized: boolean;
 	maxAuthFailures: number;
 	sandbox: "off" | "warn" | "enforce";
-	"sandbox.profileOverrides": Record<string, unknown>;
+	sandboxProfiles: Record<string, unknown>;
 }
 
 export interface SlackSettings {

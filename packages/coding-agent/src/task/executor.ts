@@ -457,7 +457,7 @@ function createSubagentSettings(baseSettings: Settings): Settings {
 	}
 
 	// Remove sub-path keys that conflict with scalar parent keys.
-	// E.g. "security.sandbox" = "enforce" and "security.sandbox.profileOverrides" = {}
+	// E.g. "todo.reminders" = true and "todo.reminders.max" = 5
 	// cannot coexist in a nested object — setByPath for the child would destroy the
 	// parent scalar by replacing it with an intermediate object.
 	const keys = Object.keys(snapshot) as SettingPath[];

@@ -1055,10 +1055,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		const sandboxMode = settings.get("security.sandbox") as SandboxMode;
 		if (sandboxMode !== "off") {
 			const agentName = resolvedAgentDisplayName;
-			const profileOverrides = (settings.get("security.sandbox.profileOverrides") ?? {}) as Record<
-				string,
-				SandboxProfile
-			>;
+			const profileOverrides = (settings.get("security.sandboxProfiles") ?? {}) as Record<string, SandboxProfile>;
 			const profile = resolveProfile(agentName, profileOverrides);
 
 			// Start proxy for domain-filtered network access (top-level only).

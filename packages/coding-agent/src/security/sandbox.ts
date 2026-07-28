@@ -7,11 +7,13 @@
  */
 
 import * as os from "node:os";
+import * as path from "node:path";
 
 import { SandboxAccessMode, SandboxCaps, SandboxProxy, sandboxIsSupported } from "@oh-my-pi/pi-natives";
 import { logger } from "@oh-my-pi/pi-utils";
 
 import type { ToolSession } from "../tools/index";
+import { resolveLocalRoot } from "../internal-urls/local-protocol";
 import { ToolError } from "../tools/tool-errors";
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -260,9 +262,37 @@ export function shutdownSandboxProxy(): void {
  * - Shell commands: kernel-enforced (cannot bypass)
  * - File tools: query-enforced here (blocks tool execution)
  */
+/**
+ * Whether `absolutePath` falls inside omp's internal session storage root
+ * (the `local://` / `artifact://` backing directory). Such paths are managed
+ * by omp itself and must remain writable regardless of the sandbox profile.
+ */
+function isInternalStoragePath(session: ToolSession, absolutePath: string): boolean {
+	let localRoot: string;
+	try {
+		localRoot = path.resolve(
+			resolveLocalRoot({
+				getArtifactsDir: session.getArtifactsDir,
+				getSessionId: session.getSessionId,
+			}),
+		);
+	} catch {
+		return false;
+	}
+	const target = path.resolve(absolutePath);
+	const rootWithSep = localRoot.endsWith(path.sep) ? localRoot : localRoot + path.sep;
+	return target === localRoot || target.startsWith(rootWithSep);
+}
+
 export function enforceSandboxAccess(session: ToolSession, absolutePath: string, mode: "read" | "write"): void {
 	const sandboxMode = session.settings.get("security.sandbox") as SandboxMode;
 	if (sandboxMode === "off") return;
+
+	// omp's own internal session storage (local:// and artifact:// targets)
+	// lives under a session-scoped root outside any user-configured profile
+	// scope. These are omp-managed scratch files (plans, artifacts), not
+	// sandboxed project paths, so they are always exempt from the policy.
+	if (isInternalStoragePath(session, absolutePath)) return;
 
 	const caps = session.sandboxCaps;
 	if (!caps) return;
