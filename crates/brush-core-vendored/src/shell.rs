@@ -32,6 +32,20 @@ pub type ErrorFormatterHelper = Arc<Mutex<dyn error::ErrorFormatter>>;
 /// Type alias for shell file descriptors.
 pub type ShellFd = i32;
 
+/// Describes the kind of access an in-process file open is performed for.
+///
+/// Used to enforce sandbox capabilities on shell builtins and I/O redirections,
+/// which are not covered by the kernel-level sandbox applied to spawned commands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FileAccessIntent {
+    /// The file is opened for reading only.
+    Read,
+    /// The file is opened for writing only.
+    Write,
+    /// The file is opened for both reading and writing.
+    ReadWrite,
+}
+
 /// Represents an instance of a shell.
 pub struct Shell {
     /// Trap handler configuration for the shell.
@@ -415,7 +429,7 @@ impl Shell {
                 options.read(true);
 
                 if let Ok(history_file) =
-                    shell.open_file(&options, history_path, &shell.default_exec_params())
+                    shell.open_file(&options, history_path, &shell.default_exec_params(), FileAccessIntent::Read)
                 {
                     shell.history = Some(history::History::import(history_file)?);
                 }
@@ -721,7 +735,7 @@ impl Shell {
         options.read(true);
 
         let opened_file: openfiles::OpenFile = self
-            .open_file(&options, path, params)
+            .open_file(&options, path, params, FileAccessIntent::Read)
             .map_err(|e| error::ErrorKind::FailedSourcingFile(path.to_owned(), e))?;
 
         if opened_file.is_dir() {
@@ -1394,6 +1408,7 @@ impl Shell {
         options: &std::fs::OpenOptions,
         path: impl AsRef<Path>,
         params: &ExecutionParameters,
+        access: FileAccessIntent,
     ) -> Result<openfiles::OpenFile, std::io::Error> {
         let path_to_open = self.absolute_path(path.as_ref());
 
@@ -1412,7 +1427,60 @@ impl Shell {
             }
         }
 
+        // Enforce sandbox capabilities for in-process file access. The kernel-level
+        // sandbox is applied via `pre_exec`, which only covers spawned commands, so
+        // builtins and I/O redirections would otherwise bypass it entirely.
+        #[cfg(unix)]
+        self.check_sandbox_path_access(&path_to_open, access)?;
+        #[cfg(not(unix))]
+        let _ = access;
+
         Ok(options.open(path_to_open)?.into())
+    }
+
+    /// Enforces sandbox capabilities for an in-process file open.
+    ///
+    /// Mirrors the kernel sandbox's union-of-grants semantics: a path is permitted
+    /// if ANY capability covers it with sufficient access. `nono`'s `query_path`
+    /// returns on the first *covering* capability, so a broad read grant (e.g. `/`)
+    /// would otherwise shadow a narrower read/write grant nested beneath it.
+    #[cfg(unix)]
+    fn check_sandbox_path_access(
+        &self,
+        path: &Path,
+        access: FileAccessIntent,
+    ) -> Result<(), std::io::Error> {
+        let Some(caps) = self.sandbox_caps.as_ref() else {
+            return Ok(());
+        };
+
+        let (requested, label) = match access {
+            FileAccessIntent::Read => (nono::AccessMode::Read, "read"),
+            FileAccessIntent::Write => (nono::AccessMode::Write, "write"),
+            FileAccessIntent::ReadWrite => (nono::AccessMode::ReadWrite, "read/write"),
+        };
+
+        let resolved = nono::path::try_canonicalize(path);
+        let permitted = caps.fs_capabilities().iter().any(|cap| {
+            let covers = if cap.is_file {
+                resolved == cap.resolved || path == cap.original.as_path()
+            } else {
+                resolved.starts_with(&cap.resolved) || path.starts_with(&cap.original)
+            };
+            covers && cap.access.contains(requested)
+        });
+
+        if permitted {
+            Ok(())
+        } else {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                format!(
+                    "sandbox: {label} access to '{}' is not permitted",
+                    path.display()
+                ),
+            ))
+        }
     }
 
     /// Sets the shell's current working directory to the given path.

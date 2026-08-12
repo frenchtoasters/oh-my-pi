@@ -38,7 +38,9 @@ In `warn` mode, a spawned process that touches a disallowed path generates a `PE
 
 Two distinct layers combine to cover all access paths:
 
-1. **Kernel-level (spawned processes)** — `SandboxCaps` is applied as a `pre_exec` hook on every shell command. The kernel rejects disallowed filesystem reads, writes, and network connections before the child process can act on them. This cannot be bypassed by the child.
+1. **Kernel-level (spawned processes)** — `SandboxCaps` is applied as a `pre_exec` hook on every spawned shell command. The kernel rejects disallowed filesystem reads, writes, and network connections before the child process can act on them. This cannot be bypassed by the child.
+
+   Because `pre_exec` only covers *spawned* processes, shell builtins and I/O redirections (`>`, `>>`, `<`, `<>`, `>|`, `read`, `mapfile`, `source`, `$(<file)`) are handled in-process by the shell and are **not** covered by the kernel layer. These are enforced separately in `Shell::open_file`, which checks the capability set before opening any path. Interactive PTY commands cannot carry capabilities (`portable_pty` exposes no `pre_exec` hook), so the PTY path is automatically disabled whenever a sandbox is active and commands fall back to the sandboxed non-PTY executor.
 
 2. **Query-level (in-process file tools)** — File tools (`read`, `write`, `edit`, `find`, `search`, `ast_grep`, `ast_edit`, `notebook`) call `enforceSandboxAccess()` before operating. In `enforce` mode this throws a hard error and instructs the agent not to substitute from memory. In `warn` mode it logs a `PERMISSION_DENIED` event and proceeds.
 

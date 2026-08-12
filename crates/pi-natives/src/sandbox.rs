@@ -140,7 +140,14 @@ pub struct SandboxProxyEnvVar {
 /// network restriction to only reach the proxy port.
 #[napi]
 pub struct SandboxProxy {
-	handle: Option<nono_proxy::ProxyHandle>,
+	handle:  Option<nono_proxy::ProxyHandle>,
+	/// Dedicated runtime driving the proxy's background tasks.
+	///
+	/// The proxy must outlive `start()`, so it needs a runtime that stays alive
+	/// for the proxy's lifetime. `Handle::current()` is not usable here: `start`
+	/// is a synchronous N-API call made from the JS thread, which is not inside
+	/// any runtime context.
+	runtime: Option<tokio::runtime::Runtime>,
 }
 
 #[napi]
@@ -148,7 +155,7 @@ impl SandboxProxy {
 	/// Create a new proxy instance (not yet started).
 	#[napi(constructor)]
 	pub fn new() -> Self {
-		Self { handle: None }
+		Self { handle: None, runtime: None }
 	}
 
 	/// Start the proxy with the given allowed hosts.
@@ -169,7 +176,13 @@ impl SandboxProxy {
 
 		let config = nono_proxy::ProxyConfig { allowed_hosts, bind_port, ..Default::default() };
 
-		let handle = tokio::runtime::Handle::current()
+		let runtime = tokio::runtime::Builder::new_multi_thread()
+			.worker_threads(1)
+			.enable_all()
+			.build()
+			.map_err(|e| Error::from_reason(format!("Failed to create proxy runtime: {e}")))?;
+
+		let handle = runtime
 			.block_on(nono_proxy::start(config))
 			.map_err(|e| Error::from_reason(format!("Failed to start proxy: {e}")))?;
 
@@ -181,6 +194,7 @@ impl SandboxProxy {
 			.collect();
 
 		self.handle = Some(handle);
+		self.runtime = Some(runtime);
 
 		Ok(SandboxProxyStartResult { port, env_vars })
 	}
@@ -191,6 +205,10 @@ impl SandboxProxy {
 		if let Some(handle) = self.handle.take() {
 			handle.shutdown();
 		}
+		// Drop the runtime without blocking the calling thread on task shutdown.
+		if let Some(runtime) = self.runtime.take() {
+			runtime.shutdown_background();
+		}
 	}
 }
 
@@ -198,6 +216,9 @@ impl Drop for SandboxProxy {
 	fn drop(&mut self) {
 		if let Some(handle) = self.handle.take() {
 			handle.shutdown();
+		}
+		if let Some(runtime) = self.runtime.take() {
+			runtime.shutdown_background();
 		}
 	}
 }

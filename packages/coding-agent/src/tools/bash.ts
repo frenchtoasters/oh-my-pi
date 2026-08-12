@@ -655,7 +655,11 @@ export class BashTool implements AgentTool<BashToolSchema, BashToolDetails> {
 		// Allocate artifact for truncated output storage
 		const { path: artifactPath, id: artifactId } = (await this.session.allocateOutputArtifact?.("bash")) ?? {};
 
-		const usePty = pty && $env.PI_NO_PTY !== "1" && ctx?.hasUI === true && ctx.ui !== undefined;
+		// The PTY path spawns via `portable_pty`, which offers no `pre_exec` hook and
+		// therefore cannot apply sandbox capabilities. Fall back to the non-PTY
+		// executor whenever a sandbox is active so commands stay confined.
+		const isSandboxed = this.session.sandboxCaps !== undefined;
+		const usePty = pty && $env.PI_NO_PTY !== "1" && ctx?.hasUI === true && ctx.ui !== undefined && !isSandboxed;
 		const result: BashResult | BashInteractiveResult = usePty
 			? await runInteractiveBashPty(ctx.ui!, {
 					command,

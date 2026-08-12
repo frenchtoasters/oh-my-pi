@@ -19,7 +19,7 @@ use crate::{
 	openfiles::{OpenFile, OpenFiles},
 	processes,
 	results::{self, ExecutionExitCode, ExecutionResult, ExecutionSpawnResult, ExecutionWaitResult},
-	shell::Shell,
+	shell::{FileAccessIntent, Shell},
 	sys, timing,
 	variables::{ArrayLiteral, ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable},
 };
@@ -1557,7 +1557,7 @@ pub(crate) async fn setup_redirect(
 				.append(*append);
 
 			let stdout_file = shell
-				.open_file(&file_options, &expanded_file_path, params)
+				.open_file(&file_options, &expanded_file_path, params, FileAccessIntent::Write)
 				.map_err(|err| {
 					error::ErrorKind::RedirectionFailure(
 						expanded_file_path.to_string_lossy().to_string(),
@@ -1587,6 +1587,15 @@ pub(crate) async fn setup_redirect(
 						shell.absolute_path(Path::new(expanded_fields.remove(0).as_str()));
 
 					let default_fd_if_unspecified = get_default_fd_for_redirect_kind(kind);
+					let access_intent = match kind {
+						ast::IoFileRedirectKind::Read => FileAccessIntent::Read,
+						ast::IoFileRedirectKind::DuplicateInput => FileAccessIntent::Read,
+						ast::IoFileRedirectKind::ReadAndWrite => FileAccessIntent::ReadWrite,
+						ast::IoFileRedirectKind::Write
+						| ast::IoFileRedirectKind::Append
+						| ast::IoFileRedirectKind::Clobber
+						| ast::IoFileRedirectKind::DuplicateOutput => FileAccessIntent::Write,
+					};
 					match kind {
 						ast::IoFileRedirectKind::Read => {
 							options.read(true);
@@ -1636,7 +1645,7 @@ pub(crate) async fn setup_redirect(
 					let fd_num = specified_fd_num.unwrap_or(default_fd_if_unspecified);
 
 					let opened_file = shell
-						.open_file(&options, &expanded_file_path, params)
+						.open_file(&options, &expanded_file_path, params, access_intent)
 						.map_err(|err| {
 							error::ErrorKind::RedirectionFailure(
 								expanded_file_path.to_string_lossy().to_string(),
