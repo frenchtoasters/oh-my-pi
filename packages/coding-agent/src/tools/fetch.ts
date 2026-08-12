@@ -10,6 +10,7 @@ import type { Settings } from "../config/settings";
 import type { RenderResultOptions } from "../extensibility/custom-tools/types";
 import { type Theme, theme } from "../modes/theme/theme";
 import type { ToolSession } from "../sdk";
+import { enforceSandboxNetwork } from "../security/sandbox";
 import { DEFAULT_MAX_BYTES, truncateHead } from "../session/streaming-output";
 import { renderStatusLine } from "../tui";
 import { CachedOutputBlock } from "../tui/output-block";
@@ -1226,6 +1227,8 @@ async function buildReadUrlCacheEntry(
 ): Promise<ReadUrlCacheEntry> {
 	const { path: url, timeout: rawTimeout = 20, raw = false } = params;
 
+	enforceSandboxNetwork(session, url);
+
 	const effectiveTimeout = clampTimeout("fetch", rawTimeout);
 
 	if (signal?.aborted) {
@@ -1258,6 +1261,10 @@ export async function loadReadUrlCacheEntry(
 	signal?: AbortSignal,
 	options?: { ensureArtifact?: boolean; preferCached?: boolean },
 ): Promise<ReadUrlCacheEntry> {
+	// Check before consulting the cache: a cache hit must not serve content the
+	// current profile is no longer allowed to reach.
+	enforceSandboxNetwork(session, params.path);
+
 	const raw = params.raw ?? false;
 	const cached = readUrlCache.get(getReadUrlCacheKey(session, params.path, raw));
 	if (options?.preferCached && cached) {

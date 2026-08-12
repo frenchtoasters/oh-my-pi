@@ -3,9 +3,18 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentTool, AgentToolContext, AgentToolResult, AgentToolUpdateCallback } from "@oh-my-pi/pi-agent-core";
 import { StringEnum } from "@oh-my-pi/pi-ai";
-import { abortableSleep, getWorktreeDir, getWorktreesDir, hashPath, isEnoent, prompt, untilAborted } from "@oh-my-pi/pi-utils";
+import {
+	abortableSleep,
+	getWorktreeDir,
+	getWorktreesDir,
+	hashPath,
+	isEnoent,
+	prompt,
+	untilAborted,
+} from "@oh-my-pi/pi-utils";
 import { type Static, Type } from "@sinclair/typebox";
 import githubDescription from "../prompts/tools/github.md" with { type: "text" };
+import { enforceSandboxNetwork } from "../security/sandbox";
 import * as git from "../utils/git";
 import type { ToolSession } from ".";
 import { formatShortSha } from "./gh-format";
@@ -2111,6 +2120,8 @@ export class GithubTool implements AgentTool<typeof githubSchema, GhToolDetails>
 		onUpdate?: AgentToolUpdateCallback<GhToolDetails>,
 		_context?: AgentToolContext,
 	): Promise<AgentToolResult<GhToolDetails>> {
+		enforceSandboxNetwork(this.session, "https://api.github.com");
+
 		return untilAborted(signal, async () => {
 			switch (params.op) {
 				case "repo_view":

@@ -125,7 +125,10 @@ export async function executeBash(command: string, options?: BashExecutorOptions
 	}
 
 	let shellSession = persistentSessionBroken ? undefined : shellSessions.get(sessionKey);
-	if (!shellSession && !persistentSessionBroken) {
+	// A broken persistent session must not fall back to one-shot `executeShell`,
+	// which cannot carry sandbox capabilities — spin up a fresh unpooled one instead.
+	const needsSandboxedFallback = persistentSessionBroken && options?.sandboxCaps != null;
+	if (!shellSession && (!persistentSessionBroken || needsSandboxedFallback)) {
 		shellSession = new Shell({
 			sessionEnv: shellEnv,
 			snapshotPath: snapshotPath ?? undefined,
@@ -135,7 +138,11 @@ export async function executeBash(command: string, options?: BashExecutorOptions
 		if (options?.sandboxCaps) {
 			shellSession.setSandbox(options.sandboxCaps);
 		}
-		shellSessions.set(sessionKey, shellSession);
+		// Ephemeral sandboxed fallback sessions are intentionally not pooled:
+		// the pool entry for this key is what went unresponsive.
+		if (!needsSandboxedFallback) {
+			shellSessions.set(sessionKey, shellSession);
+		}
 	}
 	const userSignal = options?.signal;
 	const runAbortController = new AbortController();

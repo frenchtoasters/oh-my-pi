@@ -4,6 +4,7 @@ import { prompt, untilAborted } from "@oh-my-pi/pi-utils";
 import { type Static, Type } from "@sinclair/typebox";
 import browserDescription from "../prompts/tools/browser.md" with { type: "text" };
 import type { ToolSession } from "../sdk";
+import { enforceSandboxNetwork } from "../security/sandbox";
 import { acquireBrowser, type BrowserHandle, type BrowserKind, type BrowserKindTag } from "./browser/registry";
 import type { Observation, ScreenshotResult } from "./browser/tab-protocol";
 import { acquireTab, dropHeadlessTabs, getTab, releaseAllTabs, releaseTab, runInTab } from "./browser/tab-supervisor";
@@ -134,6 +135,10 @@ export class BrowserTool implements AgentTool<typeof browserSchema, BrowserToolD
 		_onUpdate?: AgentToolUpdateCallback<BrowserToolDetails>,
 		_ctx?: AgentToolContext,
 	): Promise<AgentToolResult<BrowserToolDetails>> {
+		// The browser runs as a separate process outside the sandbox, and page
+		// JS can issue arbitrary requests, so a per-URL check cannot contain it.
+		// Require an unrestricted network policy.
+		enforceSandboxNetwork(this.session, params.url ?? "browser", { requireUnrestricted: true });
 		try {
 			throwIfAborted(signal);
 			const timeoutSeconds = clampTimeout("browser", params.timeout);

@@ -9,6 +9,7 @@ import { loadCapability } from "../discovery";
 import type { RenderResultOptions } from "../extensibility/custom-tools/types";
 import type { Theme } from "../modes/theme/theme";
 import sshDescriptionBase from "../prompts/tools/ssh.md" with { type: "text" };
+import { enforceSandboxNetwork } from "../security/sandbox";
 import { DEFAULT_MAX_BYTES, streamTailUpdates, TailBuffer } from "../session/streaming-output";
 import type { SSHHostInfo } from "../ssh/connection-manager";
 import { ensureHostInfo, getHostInfoForHost } from "../ssh/connection-manager";
@@ -148,6 +149,8 @@ export class SshTool implements AgentTool<typeof sshSchema, SSHToolDetails> {
 		if (!this.#allowedHosts.has(host)) {
 			throw new ToolError(`Unknown SSH host: ${host}. Available hosts: ${this.hostNames.join(", ")}`);
 		}
+
+		enforceSandboxNetwork(this.session, host);
 
 		const hostConfig = this.hostsByName.get(host);
 		if (!hostConfig) {

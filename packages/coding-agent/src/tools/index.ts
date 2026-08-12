@@ -234,6 +234,8 @@ export interface ToolSession {
 	sandboxCaps?: import("@oh-my-pi/pi-natives").SandboxCaps;
 	/** Sandbox proxy environment variables to inject into shell child processes. */
 	sandboxEnv?: Record<string, string>;
+	/** Active sandbox network policy for in-process network tool enforcement. */
+	sandboxNetwork?: import("../security/sandbox").SandboxNetworkMode;
 	/** Cached read-tool snapshots for stale-anchor recovery. Lazily initialized by `getFileReadCache`.
 	 *  Holds a per-path LRU of line content the model last observed, used to 3-way-merge edits when files change
 	 *  out-of-band. Lazily initialized by `getFileReadCache`. */
@@ -284,7 +286,7 @@ export const BUILTIN_TOOLS: Record<string, ToolFactory> = {
 	render_mermaid: s => new RenderMermaidTool(s),
 	ask: AskTool.createIf,
 	debug: DebugTool.createIf,
-	eval: s => new EvalTool(s),
+	eval: EvalTool.createIf,
 	calc: s => new CalculatorTool(s),
 	ssh: loadSshTool,
 	github: GithubTool.createIf,

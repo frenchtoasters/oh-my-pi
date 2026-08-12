@@ -13,6 +13,7 @@ import type { RenderResultOptions } from "../extensibility/custom-tools/types";
 import { truncateToVisualLines } from "../modes/components/visual-truncate";
 import { getMarkdownTheme, type Theme } from "../modes/theme/theme";
 import evalDescription from "../prompts/tools/eval.md" with { type: "text" };
+import type { SandboxMode } from "../security/sandbox";
 import { DEFAULT_MAX_BYTES, OutputSink, type OutputSummary, TailBuffer } from "../session/streaming-output";
 import { getTreeBranch, getTreeContinuePrefix, renderCodeCell } from "../tui";
 import { resolveEvalBackends, type ToolSession } from ".";
@@ -230,6 +231,20 @@ export class EvalTool implements AgentTool<typeof evalSchema> {
 		options?: EvalToolOptions,
 	) {
 		this.#proxyExecutor = options?.proxyExecutor;
+	}
+
+	/**
+	 * The eval backends execute code in-process: the JS backend runs in a
+	 * `node:vm` context (not a security boundary) with direct `fs`/`fetch`
+	 * access and spawns `bash` via `Bun.spawn`, and the Python backend spawns a
+	 * kernel the same way. None of these carry the session's sandbox
+	 * capabilities, so an active sandbox would be trivially bypassable through
+	 * this tool. Fail closed by not offering it at all when sandboxed.
+	 */
+	static createIf(session: ToolSession): EvalTool | null {
+		const sandboxMode = session.settings.get("security.sandbox") as SandboxMode;
+		if (sandboxMode === "enforce") return null;
+		return new EvalTool(session);
 	}
 
 	async execute(

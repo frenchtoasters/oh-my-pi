@@ -13,6 +13,7 @@ import type { CustomTool, CustomToolContext, RenderResultOptions } from "../../e
 import type { Theme } from "../../modes/theme/theme";
 import webSearchSystemPrompt from "../../prompts/system/web-search.md" with { type: "text" };
 import webSearchDescription from "../../prompts/tools/web-search.md" with { type: "text" };
+import { enforceSandboxNetwork } from "../../security/sandbox";
 import type { ToolSession } from "../../tools";
 import { formatAge } from "../../tools/render-utils";
 import { getSearchProvider, getSearchProviderLabel, resolveProviderChain, type SearchProvider } from "./provider";
@@ -199,7 +200,10 @@ export class WebSearchTool implements AgentTool<typeof webSearchSchema, SearchRe
 	readonly loadMode = "discoverable";
 	readonly summary = "Search the web for up-to-date information";
 
-	constructor(_session: ToolSession) {
+	readonly #session: ToolSession;
+
+	constructor(session: ToolSession) {
+		this.#session = session;
 		this.description = prompt.render(webSearchDescription);
 	}
 
@@ -210,6 +214,9 @@ export class WebSearchTool implements AgentTool<typeof webSearchSchema, SearchRe
 		_onUpdate?: AgentToolUpdateCallback<SearchRenderDetails>,
 		_context?: AgentToolContext,
 	): Promise<AgentToolResult<SearchRenderDetails>> {
+		// Search providers are third-party endpoints that vary per configuration,
+		// so they cannot be matched against a fixed allowlist.
+		enforceSandboxNetwork(this.#session, "web_search", { requireUnrestricted: true });
 		return executeSearch(_toolCallId, params);
 	}
 }

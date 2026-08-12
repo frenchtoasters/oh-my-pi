@@ -1058,15 +1058,18 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			const profileOverrides = (settings.get("security.sandboxProfiles") ?? {}) as Record<string, SandboxProfile>;
 			const profile = resolveProfile(agentName, profileOverrides);
 
-			// Start proxy for domain-filtered network access (top-level only).
+			// Start proxy for domain-filtered network access. Runs at every task
+			// depth — subagents are the primary users of allowlist profiles, and
+			// startSandboxProxy reuses the existing proxy when one is running.
 			let proxyPort: number | undefined;
-			if (typeof profile.network === "object" && profile.network.allowedHosts && taskDepth === 0) {
+			if (typeof profile.network === "object" && profile.network.allowedHosts) {
 				const proxy = startSandboxProxy(profile.network.allowedHosts);
 				proxyPort = proxy.port;
 				toolSession.sandboxEnv = proxy.envVars;
 			}
 
 			toolSession.sandboxCaps = buildSandboxCaps(profile, cwd, proxyPort);
+			toolSession.sandboxNetwork = profile.network;
 			logger.debug("Sandbox initialized", { mode: sandboxMode, agent: agentName, profile });
 		}
 
