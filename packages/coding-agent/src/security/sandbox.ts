@@ -121,14 +121,14 @@ const MACOS_SYSTEM_PATHS = [
  * Resolution order:
  * 1. User override from settings
  * 2. Built-in profile
- * 3. Fallback (CWD read/write, network allowed)
+ * 3. Fallback (CWD read/write, network blocked)
  */
 export function resolveProfile(agentName: string, profileOverrides: Record<string, SandboxProfile>): SandboxProfile {
 	return (
 		profileOverrides[agentName] ??
 		BUILTIN_PROFILES[agentName] ?? {
 			fs: [{ path: "$CWD", mode: "readwrite" as const }],
-			network: "allow-all" as const,
+			network: "blocked" as const,
 		}
 	);
 }
