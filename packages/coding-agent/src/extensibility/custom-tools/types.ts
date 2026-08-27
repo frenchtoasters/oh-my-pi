@@ -79,6 +79,13 @@ export interface CustomToolContext {
 	abort(): void;
 	/** Settings instance for the current session. Prefer over the global singleton. */
 	settings?: Settings;
+	/**
+	 * Active sandbox network policy, when a sandbox is enabled. Custom tools that
+	 * make their own outbound requests should pass this to
+	 * `enforceSandboxNetwork` — the child-process sandbox does not cover sockets
+	 * opened inside the agent process.
+	 */
+	sandboxNetwork?: import("../../security/sandbox").SandboxNetworkMode;
 }
 
 /** Session event passed to onSession callback */

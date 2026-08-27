@@ -172,7 +172,15 @@ describe("resolveProfile()", () => {
 	it("returns librarian profile with network hosts for package registries", () => {
 		const profile = resolveProfile("librarian", {});
 		expect(profile.network).toEqual({
-			allowedHosts: ["registry.npmjs.org", "*.crates.io", "docs.rs", "*.pypi.org"],
+			allowedHosts: [
+				"registry.npmjs.org",
+				"crates.io",
+				"*.crates.io",
+				"docs.rs",
+				"pypi.org",
+				"*.pypi.org",
+				"files.pythonhosted.org",
+			],
 		});
 		expect(profile.fs.some(f => f.path === "$CWD")).toBe(true);
 	});

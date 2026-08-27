@@ -16,6 +16,7 @@ import packageJson from "../../package.json" with { type: "json" };
 import { isAuthenticated, type ModelRegistry } from "../config/model-registry";
 import type { CustomTool } from "../extensibility/custom-tools/types";
 import imageGenDescription from "../prompts/tools/image-gen.md" with { type: "text" };
+import { enforceSandboxNetwork } from "../security/sandbox";
 import { resolveReadPath } from "./path-utils";
 
 const DEFAULT_MODEL = "gemini-3-pro-image-preview";
@@ -626,9 +627,7 @@ function isOpenAIHostedImageModel(model: Model | undefined): model is Model {
 	if (model.provider !== "openai" && model.provider !== "litellm") return false;
 	if (model.api !== "openai-completions") return false;
 	const modelId = model.id.toLowerCase();
-	return (
-		modelId.startsWith("gpt-") || modelId.startsWith("o3") || modelId.startsWith("o4")
-	);
+	return modelId.startsWith("gpt-") || modelId.startsWith("o3") || modelId.startsWith("o4");
 }
 
 function getOpenAIHostedImageProvider(_model: Model): ImageProvider {
@@ -868,6 +867,14 @@ export const imageGenTool: CustomTool<typeof imageGenSchema, ImageGenToolDetails
 	parameters: imageGenSchema,
 	async execute(_toolCallId, params, _onUpdate, ctx, signal) {
 		return untilAborted(signal, async () => {
+			// Image generation calls third-party provider endpoints that vary with
+			// credentials, so they cannot be matched against a fixed allowlist.
+			if (ctx.settings) {
+				enforceSandboxNetwork({ settings: ctx.settings, sandboxNetwork: ctx.sandboxNetwork }, "generate_image", {
+					requireUnrestricted: true,
+				});
+			}
+
 			const sessionId = ctx.sessionManager.getSessionId();
 			const apiKey = await findImageApiKey(ctx.modelRegistry, ctx.model, sessionId);
 			if (!apiKey) {

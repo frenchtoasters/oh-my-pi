@@ -112,8 +112,11 @@ function isTermuxSession(): boolean {
 	return Boolean(process.env.TERMUX_VERSION);
 }
 
-/** Detect terminal multiplexers where scrollback clearing and height-change redraws are hostile. */
+/** Multiplexers where ED3 scrollback clearing is hostile. HerdR excluded: it honors explicit clears. */
 const isMultiplexer = Boolean(Bun.env.TMUX || Bun.env.STY || Bun.env.ZELLIJ);
+
+/** Resize repaints in place: multiplexer panes plus direct HerdR, whose host owns the pane. */
+const resizeRepaintsInPlace = isMultiplexer || Bun.env.HERDR_ENV === "1";
 
 /**
  * Options for overlay positioning and sizing.
@@ -1060,7 +1063,7 @@ export class TUI extends Container {
 		// Height changes normally need a full re-render to keep the visible viewport aligned,
 		// but Termux changes height when the software keyboard shows or hides.
 		// In that environment, a full redraw causes the entire history to replay on every toggle.
-		if (heightChanged && !isTermuxSession() && !isMultiplexer) {
+		if (heightChanged && !isTermuxSession() && !resizeRepaintsInPlace) {
 			logRedraw(`terminal height changed (${this.#previousHeight} -> ${height})`);
 			fullRender(true);
 			return;

@@ -290,6 +290,16 @@ export interface AgentSessionConfig {
 	agentRegistry?: AgentRegistry;
 	/** Callback to update tool session CWD after /move or worktree switch */
 	updateToolSessionCwd?: (cwd: string) => void;
+	/**
+	 * Live view of the tool session's sandbox state. User-initiated bash (`!cmd`)
+	 * shares the shell pool with the bash tool, so it must run under the same
+	 * capabilities — otherwise it would both escape the sandbox itself and
+	 * poison the pooled shell for subsequent tool calls.
+	 */
+	getSandboxState?: () => {
+		caps?: import("@oh-my-pi/pi-natives").SandboxCaps;
+		env?: Record<string, string>;
+	};
 }
 
 /** Options for AgentSession.prompt() */
@@ -643,6 +653,7 @@ export class AgentSession {
 	#promptInFlightCount = 0;
 	#obfuscator: SecretObfuscator | undefined;
 	#updateToolSessionCwd: ((cwd: string) => void) | undefined;
+	#getSandboxState: AgentSessionConfig["getSandboxState"];
 	#checkpointState: CheckpointState | undefined = undefined;
 	#pendingRewindReport: string | undefined = undefined;
 	#lastSuccessfulYieldToolCallId: string | undefined = undefined;
@@ -731,6 +742,7 @@ export class AgentSession {
 		this.#ttsrManager = config.ttsrManager;
 		this.#obfuscator = config.obfuscator;
 		this.#updateToolSessionCwd = config.updateToolSessionCwd;
+		this.#getSandboxState = config.getSandboxState;
 		this.#agentId = config.agentId;
 		this.#agentRegistry = config.agentRegistry;
 		this.agent.setAssistantMessageEventInterceptor((message, assistantMessageEvent) => {
@@ -6311,12 +6323,15 @@ export class AgentSession {
 		this.#bashAbortControllers.add(abortController);
 
 		try {
+			const sandbox = this.#getSandboxState?.();
 			const result = await executeBashCommand(command, {
 				onChunk,
 				signal: abortController.signal,
 				sessionKey: this.sessionId,
 				timeout: clampTimeout("bash") * 1000,
 				onMinimizedSave: originalText => this.#saveBashOriginalArtifact(originalText),
+				sandboxCaps: sandbox?.caps,
+				sandboxEnv: sandbox?.env,
 			});
 
 			this.recordBashResult(command, result, options);

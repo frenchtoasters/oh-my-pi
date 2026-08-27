@@ -85,10 +85,10 @@ Agent session state (in-process memory)
 
 ```
   security.sandbox (mode: off | warn | enforce)
-  security.sandbox.profileOverrides
+  security.sandboxProfiles
       |
   Profile Resolution
-      overrides -> built-in profiles -> fallback (CWD read-only)
+      overrides -> built-in profiles -> fallback (CWD read/write, network blocked)
       |
       +---------------------------+
       |                           |
@@ -127,7 +127,7 @@ Agent session state (in-process memory)
 | `quick_task` | `$CWD` read/write | blocked |
 | `init` | `$CWD` read/write | `registry.npmjs.org`, `*.crates.io` |
 
-Custom profiles are set via `security.sandbox.profileOverrides` in settings (key = agent type, value = `SandboxProfile`).
+Custom profiles are set via `security.sandboxProfiles` in settings (key = agent type, value = `SandboxProfile`).
 
 ### Trust Boundary Impact
 

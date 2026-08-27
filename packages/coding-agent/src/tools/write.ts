@@ -438,6 +438,7 @@ export class WriteTool implements AgentTool<typeof writeSchema, WriteToolDetails
 				enforcePlanModeWrite(this.session, resolvedArchivePath.archivePath, {
 					op: resolvedArchivePath.exists ? "update" : "create",
 				});
+				enforceSandboxAccess(this.session, resolvedArchivePath.archivePath, "write");
 
 				const archiveResult = await this.#writeArchiveEntry(cleanContent, resolvedArchivePath);
 				if (stripped) {
@@ -455,6 +456,7 @@ export class WriteTool implements AgentTool<typeof writeSchema, WriteToolDetails
 			const resolvedSqlitePath = await this.#resolveSqliteWritePath(path);
 			if (resolvedSqlitePath) {
 				enforcePlanModeWrite(this.session, resolvedSqlitePath.sqlitePath, { op: "update" });
+				enforceSandboxAccess(this.session, resolvedSqlitePath.sqlitePath, "write");
 
 				const sqliteResult = await this.#writeSqliteRow(path, cleanContent, resolvedSqlitePath);
 				if (stripped) {

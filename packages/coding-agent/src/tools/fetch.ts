@@ -1236,6 +1236,12 @@ async function buildReadUrlCacheEntry(
 	}
 
 	const result = await renderUrl(url, effectiveTimeout, raw, session.settings, signal);
+	// Redirects are followed by the loader, so the URL that actually served the
+	// content may not be the one checked above. Re-check the final hop before
+	// handing the body to the agent.
+	if (result.finalUrl && result.finalUrl !== url) {
+		enforceSandboxNetwork(session, result.finalUrl);
+	}
 	const output = buildUrlReadOutput(result, result.content);
 	const artifactId = options?.ensureArtifact ? await persistReadUrlArtifact(session, output) : undefined;
 

@@ -11,12 +11,14 @@ import type { Component } from "@oh-my-pi/pi-tui";
 import {
 	$env,
 	$flag,
+	emitSecurityEvent,
 	getAgentDbPath,
 	getAgentDir,
 	getProjectDir,
 	logger,
 	postmortem,
 	prompt,
+	SecurityEventType,
 	Snowflake,
 } from "@oh-my-pi/pi-utils";
 import chalk from "chalk";
@@ -90,10 +92,11 @@ import {
 } from "./secrets";
 import {
 	buildSandboxCaps,
+	releaseSandboxProxy,
 	resolveProfile,
 	type SandboxMode,
 	type SandboxProfile,
-	shutdownSandboxProxy,
+	sandboxIsSupported,
 	startSandboxProxy,
 } from "./security/sandbox";
 import { AgentSession } from "./session/agent-session";
@@ -439,6 +442,8 @@ function createCustomToolContext(ctx: ExtensionContext): CustomToolContext {
 		isIdle: ctx.isIdle,
 		hasQueuedMessages: ctx.hasPendingMessages,
 		abort: ctx.abort,
+		settings: (ctx as { settings?: CustomToolContext["settings"] }).settings,
+		sandboxNetwork: (ctx as { sandboxNetwork?: CustomToolContext["sandboxNetwork"] }).sandboxNetwork,
 	};
 }
 
@@ -1047,10 +1052,16 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			modelRegistry,
 			asyncJobManager,
 		};
+		let rebuildSandboxForCwd: ((newCwd: string) => void) | undefined;
 		toolSession.updateCwd = (newCwd: string) => {
 			toolSession.cwd = newCwd;
+			// `$CWD`-derived grants were resolved against the old directory; without
+			// this, a /move or worktree switch leaves the session confined to a
+			// directory it is no longer working in.
+			rebuildSandboxForCwd?.(newCwd);
 		};
 
+		let claimedProxyHosts: string[] | undefined;
 		// ── Sandbox initialization ──────────────────────────────────────────
 		const sandboxMode = settings.get("security.sandbox") as SandboxMode;
 		if (sandboxMode !== "off") {
@@ -1066,10 +1077,32 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 				const proxy = startSandboxProxy(profile.network.allowedHosts);
 				proxyPort = proxy.port;
 				toolSession.sandboxEnv = proxy.envVars;
+				claimedProxyHosts = profile.network.allowedHosts;
 			}
 
-			toolSession.sandboxCaps = buildSandboxCaps(profile, cwd, proxyPort);
+			const applyCaps = (forCwd: string) => {
+				const caps = buildSandboxCaps(profile, forCwd, proxyPort);
+				toolSession.sandboxCaps = caps;
+				// The kernel layer blocks unconditionally, so `warn` (report-only) must
+				// not attach it — only in-process checks, which can log and continue.
+				toolSession.sandboxKernelCaps = sandboxMode === "enforce" ? caps : undefined;
+			};
+			applyCaps(cwd);
+			rebuildSandboxForCwd = applyCaps;
 			toolSession.sandboxNetwork = profile.network;
+			if (sandboxMode === "enforce" && !sandboxIsSupported()) {
+				logger.warn(
+					"Sandbox: enforce mode requested but OS-level sandboxing is unavailable on this platform — " +
+						"spawned processes will NOT be confined. In-process tool checks remain active.",
+					{ platform: process.platform },
+				);
+				emitSecurityEvent(SecurityEventType.INTEGRITY_VIOLATION, "sandbox", "failure", {
+					subsystem: "sandbox",
+					mode: sandboxMode,
+					platform: process.platform,
+					reason: "OS-level sandboxing unavailable",
+				});
+			}
 			logger.debug("Sandbox initialized", { mode: sandboxMode, agent: agentName, profile });
 		}
 
@@ -1314,6 +1347,9 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 				session.abort();
 			},
 			settings,
+			get sandboxNetwork() {
+				return toolSession.sandboxNetwork;
+			},
 		});
 		const toolContextStore = new ToolContextStore(getSessionContext);
 
@@ -1742,6 +1778,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			agentId: resolvedAgentId,
 			agentRegistry,
 			updateToolSessionCwd: toolSession.updateCwd,
+			getSandboxState: () => ({ caps: toolSession.sandboxKernelCaps, env: toolSession.sandboxEnv }),
 		});
 		hasSession = true;
 
@@ -1763,8 +1800,8 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 					await originalDispose();
 				} finally {
 					agentRegistry.unregister(resolvedAgentId);
-					if (taskDepth === 0) {
-						shutdownSandboxProxy();
+					if (claimedProxyHosts) {
+						releaseSandboxProxy(claimedProxyHosts);
 					}
 				}
 			};

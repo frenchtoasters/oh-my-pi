@@ -8,6 +8,7 @@ import { type Static, Type } from "@sinclair/typebox";
 import type { RenderResultOptions } from "../extensibility/custom-tools/types";
 import type { Theme } from "../modes/theme/theme";
 import astGrepDescription from "../prompts/tools/ast-grep.md" with { type: "text" };
+import { enforceSandboxAccess } from "../security/sandbox";
 import { Ellipsis, Hasher, type RenderCache, renderStatusLine, renderTreeList, truncateToWidth } from "../tui";
 import { resolveFileDisplayMode } from "../utils/file-display-mode";
 import type { ToolSession } from ".";
@@ -200,6 +201,7 @@ export class AstGrepTool implements AgentTool<typeof astGrepSchema, AstGrepToolD
 
 			const resolvedSearchPath = searchPath;
 			scopePath = scopePath ?? formatScopePath(resolvedSearchPath);
+			enforceSandboxAccess(this.session, resolvedSearchPath, "read");
 			let isDirectory: boolean;
 			try {
 				const stat = await Bun.file(resolvedSearchPath).stat();

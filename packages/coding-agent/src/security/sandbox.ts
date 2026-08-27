@@ -11,7 +11,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 import { SandboxAccessMode, SandboxCaps, SandboxProxy, sandboxIsSupported } from "@oh-my-pi/pi-natives";
-import { logger } from "@oh-my-pi/pi-utils";
+import { emitSecurityEvent, logger, SecurityEventType } from "@oh-my-pi/pi-utils";
 import { resolveLocalRoot } from "../internal-urls/local-protocol";
 import type { ToolSession } from "../tools/index";
 import { ToolError } from "../tools/tool-errors";
@@ -39,6 +39,21 @@ export interface SandboxProfile {
 // ═══════════════════════════════════════════════════════════════════════════
 
 export const BUILTIN_PROFILES: Record<string, SandboxProfile> = {
+	/**
+	 * The top-level interactive agent. Not a subagent: its trust boundary is the
+	 * user driving the session, so it keeps network access. Without an explicit
+	 * entry it would hit the deny-all fallback below and lose `fetch`,
+	 * `web_search`, `gh`, `browser` and `ssh` the moment a sandbox is enabled.
+	 */
+	main: {
+		fs: [{ path: "$CWD", mode: "readwrite" }],
+		network: "allow-all",
+	},
+	/** Generic subagent with no dedicated profile — least privilege. */
+	sub: {
+		fs: [{ path: "$CWD", mode: "readwrite" }],
+		network: "blocked",
+	},
 	explore: {
 		fs: [{ path: "$CWD", mode: "read" }],
 		network: "blocked",
@@ -65,7 +80,17 @@ export const BUILTIN_PROFILES: Record<string, SandboxProfile> = {
 			{ path: "$HOME/.bun", mode: "read" },
 		],
 		network: {
-			allowedHosts: ["registry.npmjs.org", "*.crates.io", "docs.rs", "*.pypi.org"],
+			// `*.x` matches subdomains only, so apex domains are listed separately.
+			// `files.pythonhosted.org` is where PyPI actually serves distributions.
+			allowedHosts: [
+				"registry.npmjs.org",
+				"crates.io",
+				"*.crates.io",
+				"docs.rs",
+				"pypi.org",
+				"*.pypi.org",
+				"files.pythonhosted.org",
+			],
 		},
 	},
 	plan: {
@@ -91,7 +116,7 @@ export const BUILTIN_PROFILES: Record<string, SandboxProfile> = {
 	init: {
 		fs: [{ path: "$CWD", mode: "readwrite" }],
 		network: {
-			allowedHosts: ["registry.npmjs.org", "*.crates.io"],
+			allowedHosts: ["registry.npmjs.org", "crates.io", "*.crates.io"],
 		},
 	},
 };
@@ -224,7 +249,10 @@ export function buildSandboxCaps(profile: SandboxProfile, cwd: string, proxyPort
  * distinct proxies — reusing one proxy across profiles would widen the
  * allowlist of the narrower profile to that of the first one started.
  */
-const activeProxies = new Map<string, { proxy: SandboxProxy; port: number; envVars: Record<string, string> }>();
+const activeProxies = new Map<
+	string,
+	{ proxy: SandboxProxy; port: number; envVars: Record<string, string>; refCount: number }
+>();
 
 /**
  * Start the sandbox proxy for domain-level network filtering.
@@ -239,6 +267,7 @@ export function startSandboxProxy(allowedHosts: string[]): {
 	const key = allowedHosts.join("\u0000");
 	const existing = activeProxies.get(key);
 	if (existing) {
+		existing.refCount++;
 		return { port: existing.port, envVars: existing.envVars };
 	}
 
@@ -249,14 +278,35 @@ export function startSandboxProxy(allowedHosts: string[]): {
 	for (const { key: envKey, value } of result.envVars) {
 		envVars[envKey] = value;
 	}
-	activeProxies.set(key, { proxy, port: result.port, envVars });
+	activeProxies.set(key, { proxy, port: result.port, envVars, refCount: 1 });
 
 	logger.debug("Sandbox proxy started", { port: result.port, hosts: allowedHosts });
 	return { port: result.port, envVars };
 }
 
 /**
- * Shut down all active sandbox proxies.
+ * Release this session's claim on the proxy for `allowedHosts`, shutting it
+ * down once no session is using it.
+ *
+ * Refcounted rather than a blanket teardown: several sessions can share a
+ * process (swarm, nested tasks, the SDK embedded in a host app), and tearing
+ * down every proxy when one of them exits would silently cut network access
+ * for its still-running peers.
+ */
+export function releaseSandboxProxy(allowedHosts: string[]): void {
+	const key = allowedHosts.join("\u0000");
+	const entry = activeProxies.get(key);
+	if (!entry) return;
+	entry.refCount--;
+	if (entry.refCount > 0) return;
+	entry.proxy.shutdown();
+	activeProxies.delete(key);
+	logger.debug("Sandbox proxy shut down", { port: entry.port, hosts: allowedHosts });
+}
+
+/**
+ * Shut down every active sandbox proxy regardless of refcount. For process
+ * exit only — mid-session this will break peer sessions.
  */
 export function shutdownSandboxProxy(): void {
 	for (const { proxy } of activeProxies.values()) {
@@ -339,6 +389,17 @@ export function enforceSandboxAccess(session: ToolSession, absolutePath: string,
 	const allowed = caps.queryPath(resolvedPath, accessMode);
 
 	if (!allowed) {
+		emitSecurityEvent(
+			SecurityEventType.PERMISSION_DENIED,
+			absolutePath,
+			sandboxMode === "enforce" ? "blocked" : "success",
+			{
+				subsystem: "sandbox",
+				mode: sandboxMode,
+				access: mode,
+				resolvedPath,
+			},
+		);
 		if (sandboxMode === "enforce") {
 			throw new ToolError(
 				`SANDBOX POLICY: ${mode} access denied for ${absolutePath}. ` +
@@ -366,15 +427,41 @@ function hostMatches(hostname: string, pattern: string): boolean {
 }
 
 /**
+ * Reduce a non-URL network target to a bare hostname: `user@host:22/path` → `host`.
+ * Bracketed IPv6 literals keep their contents.
+ */
+function stripHostSpec(target: string): string {
+	let value = target.trim();
+	const at = value.lastIndexOf("@");
+	if (at !== -1) value = value.slice(at + 1);
+	value = value.split("/")[0] ?? value;
+	const bracketed = /^\[([^\]]+)\]/.exec(value);
+	if (bracketed) return bracketed[1].toLowerCase();
+	const colon = value.indexOf(":");
+	if (colon !== -1) value = value.slice(0, colon);
+	return value.toLowerCase();
+}
+
+/**
+ * Minimal surface `enforceSandboxNetwork` needs. Kept narrower than
+ * `ToolSession` so `CustomTool`s (which get a `CustomToolContext`, not a
+ * `ToolSession`) can be checked too.
+ */
+export interface SandboxNetworkContext {
+	settings: import("../config/settings").Settings;
+	sandboxNetwork?: SandboxNetworkMode;
+}
+
+/**
  * Enforce sandbox network policy for in-process network tools (fetch, browser,
- * ssh, gh, irc, web_search).
+ * ssh, gh, irc, web_search, generate_image).
  *
  * These tools open sockets from the agent's own process, so the kernel-level
  * `pre_exec` sandbox applied to shell children does not cover them. Without
  * this check a `network: "blocked"` profile still has full egress via tools.
  */
 export function enforceSandboxNetwork(
-	session: ToolSession,
+	session: SandboxNetworkContext,
 	target: string,
 	options?: { requireUnrestricted?: boolean },
 ): void {
@@ -385,6 +472,17 @@ export function enforceSandboxNetwork(
 	if (!policy || policy === "allow-all") return;
 
 	const deny = (reason: string): void => {
+		emitSecurityEvent(
+			SecurityEventType.PERMISSION_DENIED,
+			target,
+			sandboxMode === "enforce" ? "blocked" : "success",
+			{
+				subsystem: "sandbox",
+				mode: sandboxMode,
+				access: "network",
+				reason,
+			},
+		);
 		if (sandboxMode === "enforce") {
 			throw new ToolError(
 				`SANDBOX POLICY: network access denied for ${target}. ${reason} ` +
@@ -414,8 +512,10 @@ export function enforceSandboxNetwork(
 	try {
 		hostname = new URL(target).hostname;
 	} catch {
-		// Not a URL (e.g. an ssh host spec) — treat the raw value as the host.
-		hostname = target;
+		// Not a URL — typically an ssh destination. Strip the `user@` prefix and
+		// any `:port` / trailing path so the bare host reaches `hostMatches`,
+		// which anchors on full equality and would otherwise never match.
+		hostname = stripHostSpec(target);
 	}
 
 	if (!policy.allowedHosts.some(pattern => hostMatches(hostname, pattern))) {

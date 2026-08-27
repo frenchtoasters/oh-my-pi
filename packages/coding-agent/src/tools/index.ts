@@ -1,6 +1,6 @@
 import type { AgentTool } from "@oh-my-pi/pi-agent-core";
 import type { ToolChoice } from "@oh-my-pi/pi-ai";
-import { $env, $flag, logger } from "@oh-my-pi/pi-utils";
+import { logger } from "@oh-my-pi/pi-utils";
 import type { AsyncJobManager } from "../async";
 import type { PromptTemplate } from "../config/prompt-templates";
 import type { Settings } from "../config/settings";
@@ -28,6 +28,7 @@ import { CalculatorTool } from "./calculator";
 import { type CheckpointState, CheckpointTool, RewindTool } from "./checkpoint";
 import { DebugTool } from "./debug";
 import { EvalTool } from "./eval";
+import { resolveEvalBackends } from "./eval-backends";
 import { ExitPlanModeTool } from "./exit-plan-mode";
 import { FindTool } from "./find";
 import { GithubTool } from "./gh";
@@ -230,8 +231,18 @@ export interface ToolSession {
 
 	/** Queue a hidden message to be injected at the next agent turn. */
 	queueDeferredMessage?(message: CustomMessage): void;
-	/** Active sandbox capabilities for in-process file tool enforcement. */
+	/**
+	 * Active sandbox capabilities for in-process file tool enforcement. Present
+	 * in both `warn` and `enforce` mode — `enforceSandboxAccess` decides whether
+	 * a denial logs or throws.
+	 */
 	sandboxCaps?: import("@oh-my-pi/pi-natives").SandboxCaps;
+	/**
+	 * Capabilities to apply to spawned shell processes via `pre_exec`. Only set
+	 * in `enforce` mode: the kernel layer cannot report-without-blocking, so
+	 * attaching it in `warn` mode would make `warn` silently block.
+	 */
+	sandboxKernelCaps?: import("@oh-my-pi/pi-natives").SandboxCaps;
 	/** Sandbox proxy environment variables to inject into shell child processes. */
 	sandboxEnv?: Record<string, string>;
 	/** Active sandbox network policy for in-process network tool enforcement. */
@@ -284,31 +295,31 @@ export const BUILTIN_TOOLS: Record<string, ToolFactory> = {
 	ast_grep: s => new AstGrepTool(s),
 	ast_edit: s => new AstEditTool(s),
 	render_mermaid: s => new RenderMermaidTool(s),
-	ask: AskTool.createIf,
-	debug: DebugTool.createIf,
-	eval: EvalTool.createIf,
+	ask: s => AskTool.createIf(s),
+	debug: s => DebugTool.createIf(s),
+	eval: s => EvalTool.createIf(s),
 	calc: s => new CalculatorTool(s),
 	ssh: loadSshTool,
-	github: GithubTool.createIf,
+	github: s => GithubTool.createIf(s),
 	find: s => new FindTool(s),
 	search: s => new SearchTool(s),
-	lsp: LspTool.createIf,
+	lsp: s => LspTool.createIf(s),
 	notebook: s => new NotebookTool(s),
 	inspect_image: s => new InspectImageTool(s),
 	browser: s => new BrowserTool(s),
-	checkpoint: CheckpointTool.createIf,
-	rewind: RewindTool.createIf,
-	task: TaskTool.create,
-	job: JobTool.createIf,
-	recipe: RecipeTool.createIf,
-	irc: IrcTool.createIf,
+	checkpoint: s => CheckpointTool.createIf(s),
+	rewind: s => RewindTool.createIf(s),
+	task: s => TaskTool.create(s),
+	job: s => JobTool.createIf(s),
+	recipe: s => RecipeTool.createIf(s),
+	irc: s => IrcTool.createIf(s),
 	todo_write: s => new TodoWriteTool(s),
 	web_search: s => new WebSearchTool(s),
-	search_tool_bm25: SearchToolBm25Tool.createIf,
+	search_tool_bm25: s => SearchToolBm25Tool.createIf(s),
 	write: s => new WriteTool(s),
-	retain: HindsightRetainTool.createIf,
-	recall: HindsightRecallTool.createIf,
-	reflect: HindsightReflectTool.createIf,
+	retain: s => HindsightRetainTool.createIf(s),
+	recall: s => HindsightRecallTool.createIf(s),
+	reflect: s => HindsightReflectTool.createIf(s),
 };
 
 export const HIDDEN_TOOLS: Record<string, ToolFactory> = {
@@ -321,41 +332,7 @@ export const HIDDEN_TOOLS: Record<string, ToolFactory> = {
 
 export type ToolName = keyof typeof BUILTIN_TOOLS;
 
-export interface EvalBackendsAllowance {
-	python: boolean;
-	js: boolean;
-}
-
-/**
- * Parse PI_PY / PI_JS environment variables. Each is a boolean flag; unset
- * means "not specified, defer to settings". Returns null when neither is set
- * so the caller can fall through to `readEvalBackendsAllowance` per key.
- */
-function getEvalBackendsFromEnv(): EvalBackendsAllowance | null {
-	const pyEnv = $env.PI_PY;
-	const jsEnv = $env.PI_JS;
-	if (pyEnv === undefined && jsEnv === undefined) return null;
-	return {
-		python: pyEnv === undefined ? true : $flag("PI_PY"),
-		js: jsEnv === undefined ? true : $flag("PI_JS"),
-	};
-}
-
-/** Read per-backend allowance from settings (defaults true). */
-export function readEvalBackendsAllowance(session: ToolSession): EvalBackendsAllowance {
-	return {
-		python: session.settings.get("eval.py") ?? true,
-		js: session.settings.get("eval.js") ?? true,
-	};
-}
-
-/**
- * Materialize the active eval backend allowance: PI_PY / PI_JS env flags
- * override the per-key settings; otherwise settings (defaults true) win.
- */
-export function resolveEvalBackends(session: ToolSession): EvalBackendsAllowance {
-	return getEvalBackendsFromEnv() ?? readEvalBackendsAllowance(session);
-}
+export { type EvalBackendsAllowance, readEvalBackendsAllowance, resolveEvalBackends } from "./eval-backends";
 
 /**
  * Create tools from BUILTIN_TOOLS registry.

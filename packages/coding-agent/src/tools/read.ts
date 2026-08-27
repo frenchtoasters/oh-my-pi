@@ -8,8 +8,8 @@ import type { Component } from "@oh-my-pi/pi-tui";
 import { Text } from "@oh-my-pi/pi-tui";
 import { getRemoteDir, prompt, readImageMetadata, untilAborted } from "@oh-my-pi/pi-utils";
 import { type Static, Type } from "@sinclair/typebox";
-import { formatHashLine, formatHashLines, formatLineHash, HL_BODY_SEP } from "../edit/line-hash";
 import { getFileReadCache } from "../edit/file-read-cache";
+import { formatHashLine, formatHashLines, formatLineHash, HL_BODY_SEP } from "../edit/line-hash";
 import type { RenderResultOptions } from "../extensibility/custom-tools/types";
 import { parseInternalUrl } from "../internal-urls/parse";
 import type { InternalUrl } from "../internal-urls/types";
@@ -1178,14 +1178,21 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 				if (!isRemoteMountPath(absolutePath)) {
 					const suffixMatch = await findUniqueSuffixMatch(localReadPath, this.session.cwd, signal);
 					if (suffixMatch) {
+						let retryStat: Awaited<ReturnType<ReturnType<typeof Bun.file>["stat"]>> | undefined;
 						try {
-							const retryStat = await Bun.file(suffixMatch.absolutePath).stat();
+							retryStat = await Bun.file(suffixMatch.absolutePath).stat();
+						} catch {
+							// Suffix match candidate no longer stats — fall through to error path
+						}
+						if (retryStat) {
+							// Re-check outside the try: suffix resolution rewrites the target,
+							// so the path vetted above is not the one about to be read, and a
+							// sandbox denial must not be swallowed as a failed stat.
+							enforceSandboxAccess(this.session, suffixMatch.absolutePath, "read");
 							absolutePath = suffixMatch.absolutePath;
 							fileSize = retryStat.size;
 							isDirectory = retryStat.isDirectory();
 							suffixResolution = { from: localReadPath, to: suffixMatch.displayPath };
-						} catch {
-							// Suffix match candidate no longer stats — fall through to error path
 						}
 					}
 				}

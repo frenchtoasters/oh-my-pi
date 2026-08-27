@@ -17,6 +17,7 @@ import {
 	type WritethroughCallback,
 	type WritethroughDeferredHandle,
 } from "../../lsp";
+import { enforceSandboxAccess } from "../../security/sandbox";
 import type { ToolSession } from "../../tools";
 import { assertEditableFile } from "../../tools/auto-generated-guard";
 import {
@@ -1716,6 +1717,14 @@ export async function executePatchSingle(
 	enforcePlanModeWrite(session, path, { op, move: rename });
 	const resolvedPath = resolvePlanPath(session, path);
 	const resolvedRename = rename ? resolvePlanPath(session, rename) : undefined;
+
+	// Both the source and any rename destination are written, so both need the
+	// write capability. Paths are resolved to absolute form first — the profile
+	// check is meaningless against a cwd-relative path.
+	enforceSandboxAccess(session, resolveToCwd(resolvedPath, session.cwd), "write");
+	if (resolvedRename) {
+		enforceSandboxAccess(session, resolveToCwd(resolvedRename, session.cwd), "write");
+	}
 
 	await assertEditableFile(resolvedPath, path);
 

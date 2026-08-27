@@ -56,6 +56,28 @@ const HARD_TIMEOUT_GRACE_MS = 5_000;
 const shellSessions = new Map<string, Shell>();
 const brokenShellSessions = new Set<string>();
 
+/**
+ * Stable per-capability-set ids used to partition the shell pool.
+ *
+ * Pooled shells carry their sandbox capabilities for their whole lifetime —
+ * `setSandbox` is only applied at construction. Without this in the key, an
+ * unsandboxed shell (e.g. a user `!` command, which passes no caps) and a
+ * sandboxed tool call would share a pool entry, and whichever ran first would
+ * silently decide enforcement for every later command on that key.
+ */
+const sandboxCapIds = new WeakMap<object, string>();
+let nextSandboxCapId = 0;
+
+function sandboxPoolTag(caps: object | undefined): string {
+	if (!caps) return "nosandbox";
+	let id = sandboxCapIds.get(caps);
+	if (!id) {
+		id = `sb${nextSandboxCapId++}`;
+		sandboxCapIds.set(caps, id);
+	}
+	return id;
+}
+
 async function resolveShellCwd(cwd: string | undefined): Promise<string | undefined> {
 	if (!cwd) return undefined;
 
@@ -118,7 +140,15 @@ export async function executeBash(command: string, options?: BashExecutorOptions
 		};
 	}
 
-	const sessionKey = buildSessionKey(shell, prefix, snapshotPath, shellEnv, options?.sessionKey, minimizer);
+	const sessionKey = buildSessionKey(
+		shell,
+		prefix,
+		snapshotPath,
+		shellEnv,
+		options?.sessionKey,
+		minimizer,
+		sandboxPoolTag(options?.sandboxCaps),
+	);
 	const persistentSessionBroken = brokenShellSessions.has(sessionKey);
 	if (persistentSessionBroken) {
 		shellSessions.delete(sessionKey);
@@ -297,12 +327,19 @@ function buildSessionKey(
 	env: Record<string, string>,
 	agentSessionKey?: string,
 	minimizer?: MinimizerOptions,
+	sandboxTag?: string,
 ): string {
 	const entries = Object.entries(env);
 	entries.sort(([a], [b]) => a.localeCompare(b));
 	const envSerialized = entries.map(([key, value]) => `${key}=${value}`).join("\n");
 	const minimizerSerialized = minimizer ? JSON.stringify(minimizer) : "";
-	return [agentSessionKey ?? "", shell, prefix ?? "", snapshotPath ?? "", envSerialized, minimizerSerialized].join(
-		"\n",
-	);
+	return [
+		agentSessionKey ?? "",
+		shell,
+		prefix ?? "",
+		snapshotPath ?? "",
+		envSerialized,
+		minimizerSerialized,
+		sandboxTag ?? "",
+	].join("\n");
 }

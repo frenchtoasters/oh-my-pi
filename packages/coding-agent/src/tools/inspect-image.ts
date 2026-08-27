@@ -5,6 +5,7 @@ import { type Static, Type } from "@sinclair/typebox";
 import { expandRoleAlias, resolveModelFromString } from "../config/model-resolver";
 import inspectImageDescription from "../prompts/tools/inspect-image.md" with { type: "text" };
 import inspectImageSystemPromptTemplate from "../prompts/tools/inspect-image-system.md" with { type: "text" };
+import { enforceSandboxAccess } from "../security/sandbox";
 import {
 	ImageInputTooLargeError,
 	type LoadedImageInput,
@@ -12,6 +13,7 @@ import {
 	MAX_IMAGE_INPUT_BYTES,
 } from "../utils/image-loading";
 import type { ToolSession } from "./index";
+import { resolveToCwd } from "./path-utils";
 import { ToolError } from "./tool-errors";
 
 const inspectImageSchema = Type.Object(
@@ -106,6 +108,8 @@ export class InspectImageTool implements AgentTool<typeof inspectImageSchema, In
 				`No API key available for ${model.provider}/${model.id}. Configure credentials for this provider or choose another vision-capable model.`,
 			);
 		}
+
+		enforceSandboxAccess(this.session, resolveToCwd(params.path, this.session.cwd), "read");
 
 		let imageInput: LoadedImageInput | null;
 		try {

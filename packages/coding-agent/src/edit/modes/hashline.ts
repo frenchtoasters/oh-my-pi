@@ -33,6 +33,7 @@ import { isEnoent } from "@oh-my-pi/pi-utils";
 import { type Static, Type } from "@sinclair/typebox";
 import * as Diff from "diff";
 import type { WritethroughCallback, WritethroughDeferredHandle } from "../../lsp";
+import { enforceSandboxAccess } from "../../security/sandbox";
 import type { ToolSession } from "../../tools";
 import { assertEditableFileContent } from "../../tools/auto-generated-guard";
 import { invalidateFsScanAfterWrite } from "../../tools/fs-cache-invalidation";
@@ -540,7 +541,6 @@ export class HashlineMismatchError extends Error {
 		return lines.join("\n");
 	}
 }
-
 
 // ───────────────────────────────────────────────────────────────────────────
 // 9. Compact diff preview
@@ -1776,7 +1776,6 @@ function getEditDetails(result: AgentToolResult<EditToolDetails>): EditToolDetai
 	return result.details ?? { diff: "" };
 }
 
-
 /**
  * Apply hashline edits with anchor-stale recovery: on `HashlineMismatchError`,
  * consult the read-snapshot cache for the file and 3-way-merge the edits onto
@@ -1820,6 +1819,7 @@ async function preflightHashlineSection(options: ExecuteHashlineSingleOptions & 
 	const absolutePath = resolvePlanPath(session, sectionPath);
 	const { edits } = parseHashlineWithWarnings(diff);
 	enforcePlanModeWrite(session, sectionPath, { op: "update" });
+	enforceSandboxAccess(session, resolveToCwd(absolutePath, session.cwd), "write");
 
 	const source = await readHashlineFile(absolutePath, sectionPath);
 	if (!source.exists && hasAnchorScopedEdit(edits)) throw new Error(`File not found: ${sectionPath}`);
@@ -1853,6 +1853,7 @@ async function executeHashlineSection(
 	const absolutePath = resolvePlanPath(session, sourcePath);
 	const { edits, warnings: parseWarnings } = parseHashlineWithWarnings(diff);
 	enforcePlanModeWrite(session, sourcePath, { op: "update" });
+	enforceSandboxAccess(session, resolveToCwd(absolutePath, session.cwd), "write");
 
 	const source = await readHashlineFile(absolutePath, sourcePath);
 	if (!source.exists && hasAnchorScopedEdit(edits)) throw new Error(`File not found: ${sourcePath}`);

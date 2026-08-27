@@ -9,7 +9,7 @@ Security settings are available in the `/settings` TUI under the **Security** ta
 ```yaml
 security:
   sandbox: "off"                    # "off" | "warn" | "enforce"
-  sandbox.profileOverrides: {}      # per-agent SandboxProfile overrides
+  sandboxProfiles: {}                # per-agent SandboxProfile overrides
   executionPolicy: "permissive"     # "permissive" | "strict"
   encryptCredentials: false
   encryptSessions: false
@@ -29,10 +29,10 @@ The process sandbox applies OS-enforced isolation to every command spawned by th
 | Mode | Behavior |
 |---|---|
 | `off` (default) | No isolation. All filesystem and network access permitted. |
-| `warn` | Sandbox is active. Violations are logged to the audit log but not blocked. |
+| `warn` | In-process tool checks are active and log violations without blocking. The kernel layer is **not** applied, so spawned commands are unrestricted. |
 | `enforce` | Sandbox is active. Violations are blocked. Denied in-process file tool calls raise a hard error. |
 
-In `warn` mode, a spawned process that touches a disallowed path generates a `PERMISSION_DENIED` audit event; the access still succeeds at the kernel level. Use `warn` to audit what an agent actually reaches before committing to `enforce`.
+In `warn` mode a denied in-process tool call is logged and proceeds. The kernel sandbox is deliberately not attached, since Landlock/Seatbelt cannot report-without-blocking; use `warn` to see what an agent reaches before committing to `enforce`.
 
 ### Enforcement layers
 
@@ -42,7 +42,7 @@ Two distinct layers combine to cover all access paths:
 
    Because `pre_exec` only covers *spawned* processes, shell builtins and I/O redirections (`>`, `>>`, `<`, `<>`, `>|`, `read`, `mapfile`, `source`, `$(<file)`) are handled in-process by the shell and are **not** covered by the kernel layer. These are enforced separately in `Shell::open_file`, which checks the capability set before opening any path. Interactive PTY commands cannot carry capabilities (`portable_pty` exposes no `pre_exec` hook), so the PTY path is automatically disabled whenever a sandbox is active and commands fall back to the sandboxed non-PTY executor.
 
-2. **Query-level (in-process file tools)** — File tools (`read`, `write`, `edit`, `find`, `search`, `ast_grep`, `ast_edit`, `notebook`) call `enforceSandboxAccess()` before operating. In `enforce` mode this throws a hard error and instructs the agent not to substitute from memory. In `warn` mode it logs a `PERMISSION_DENIED` event and proceeds.
+2. **Query-level (in-process file tools)** — File tools (`read`, `write`, `edit`/`apply_patch`, `find`, `search`, `ast_grep`, `ast_edit`, `notebook`, `inspect_image`) call `enforceSandboxAccess()` before operating. In `enforce` mode this throws a hard error and instructs the agent not to substitute from memory. In `warn` mode it logs and proceeds. In-process network tools (`fetch`, `web_search`, `gh`, `browser`, `ssh`, `eval`) call `enforceSandboxNetwork()` the same way, since sockets opened by the agent process are not covered by the child-process sandbox.
 
 ### Built-in profiles
 
@@ -50,46 +50,49 @@ Each agent type ships with a least-privilege profile:
 
 | Agent | Filesystem | Network |
 |---|---|---|
+| `main` | `$CWD` read/write | allow-all |
+| `sub` | `$CWD` read/write | blocked |
 | `explore` | `$CWD` read | blocked |
 | `reviewer` | `$CWD` read | blocked |
-| `librarian` | `$CWD` read, `$HOME/.bun` read | `registry.npmjs.org`, `*.crates.io`, `docs.rs`, `*.pypi.org` |
+| `librarian` | `$CWD` read, `$HOME/.bun` read | `registry.npmjs.org`, `crates.io`, `*.crates.io`, `docs.rs`, `pypi.org`, `*.pypi.org`, `files.pythonhosted.org` |
 | `plan` | `$CWD` read | blocked |
 | `designer` | `$CWD` read/write | blocked |
 | `task` | `$CWD` read/write, `$HOME/.bun` read, `$HOME/.cargo` read | blocked |
 | `quick_task` | `$CWD` read/write | blocked |
-| `init` | `$CWD` read/write | `registry.npmjs.org`, `*.crates.io` |
+| `init` | `$CWD` read/write | `registry.npmjs.org`, `crates.io`, `*.crates.io` |
 
-Unknown agent names fall back to `$CWD` read/write with network blocked.
+Unknown agent names fall back to `$CWD` read/write with network blocked. `main` is the top-level interactive agent — its trust boundary is the user driving the session, so it keeps network access; override it in `security.sandboxProfiles` to tighten this.
+
+Host patterns are matched exactly, except a leading `*.` which matches subdomains only. `*.example.com` does **not** match the bare apex `example.com`, so list both when you need each.
 
 ### Custom profile overrides
 
-Override any built-in profile or define profiles for custom agent types via `security.sandbox.profileOverrides` in `config.yml`:
+Override any built-in profile or define profiles for custom agent types via `security.sandboxProfiles` in `config.yml`:
 
 ```yaml
 security:
-  sandbox:
-    profileOverrides:
-      # Widen the task agent to also read /etc/ssl for certificate access
-      task:
-        fs:
-          - path: "$CWD"
-            mode: "readwrite"
-          - path: "$HOME/.bun"
-            mode: "read"
-          - path: "$HOME/.cargo"
-            mode: "read"
-          - path: "/etc/ssl"
-            mode: "read"
-        network: "blocked"
+  sandboxProfiles:
+    # Widen the task agent to also read /etc/ssl for certificate access
+    task:
+      fs:
+        - path: "$CWD"
+          mode: "readwrite"
+        - path: "$HOME/.bun"
+          mode: "read"
+        - path: "$HOME/.cargo"
+          mode: "read"
+        - path: "/etc/ssl"
+          mode: "read"
+      network: "blocked"
 
-      # Custom agent that must reach an internal registry
-      my-custom-agent:
-        fs:
-          - path: "$CWD"
-            mode: "readwrite"
-        network:
-          allowedHosts:
-            - "registry.internal.example.com"
+    # Custom agent that must reach an internal registry
+    my-custom-agent:
+      fs:
+        - path: "$CWD"
+          mode: "readwrite"
+      network:
+        allowedHosts:
+          - "registry.internal.example.com"
 ```
 
 The `SandboxProfile` shape:
@@ -125,8 +128,8 @@ Paths that do not exist at profile resolution time are silently skipped (system 
 
 If the sandbox cannot be initialized (unsupported kernel version, missing capability, macOS SIP restriction), behavior depends on mode:
 
-- `warn` — logs a warning and continues without sandbox enforcement.
-- `enforce` — logs an `INTEGRITY_VIOLATION` audit event. The session continues but the sandbox is inactive; the agent is not aware it is unsandboxed.
+- `warn` — logs a warning and continues without kernel enforcement (which `warn` never applies anyway).
+- `enforce` — logs a warning at session start naming the platform. The session continues and in-process tool checks stay active, but spawned processes are **not** confined.
 
 Use `sandboxIsSupported()` (exported from `@oh-my-pi/pi-natives`) to check availability programmatically.
 

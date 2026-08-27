@@ -393,7 +393,7 @@ export class BashTool implements AgentTool<BashToolSchema, BashToolDetails> {
 							void reportProgress(latestText, { async: { state: "running", jobId, type: "bash" } });
 						},
 						onMinimizedSave: originalText => saveBashOriginalArtifact(this.session, originalText),
-						sandboxCaps: this.session.sandboxCaps,
+						sandboxCaps: this.session.sandboxKernelCaps,
 						sandboxEnv: this.session.sandboxEnv,
 					});
 					const finalResult = this.#buildCompletedResult(
@@ -658,7 +658,7 @@ export class BashTool implements AgentTool<BashToolSchema, BashToolDetails> {
 		// The PTY path spawns via `portable_pty`, which offers no `pre_exec` hook and
 		// therefore cannot apply sandbox capabilities. Fall back to the non-PTY
 		// executor whenever a sandbox is active so commands stay confined.
-		const isSandboxed = this.session.sandboxCaps !== undefined;
+		const isSandboxed = this.session.sandboxKernelCaps !== undefined;
 		const usePty = pty && $env.PI_NO_PTY !== "1" && ctx?.hasUI === true && ctx.ui !== undefined && !isSandboxed;
 		const result: BashResult | BashInteractiveResult = usePty
 			? await runInteractiveBashPty(ctx.ui!, {
@@ -680,7 +680,7 @@ export class BashTool implements AgentTool<BashToolSchema, BashToolDetails> {
 					artifactId,
 					onChunk: streamTailUpdates(tailBuffer, onUpdate),
 					onMinimizedSave: originalText => saveBashOriginalArtifact(this.session, originalText),
-					sandboxCaps: this.session.sandboxCaps,
+					sandboxCaps: this.session.sandboxKernelCaps,
 					sandboxEnv: this.session.sandboxEnv,
 				});
 		if (result.cancelled) {

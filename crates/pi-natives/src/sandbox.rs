@@ -94,11 +94,26 @@ impl SandboxCaps {
 	///
 	/// This is an advisory check — it does not apply the sandbox, just
 	/// evaluates the capability set.
+	///
+	/// Mirrors `Shell::check_sandbox_path_access`'s union-of-grants semantics
+	/// rather than delegating to `nono`'s `path_covered_with_access`, which
+	/// skips `is_file` capabilities entirely (so single-file grants such as
+	/// `/dev/null` or a profile entry pointing at a file would never match)
+	/// and returns on the first covering capability (so a broad read grant can
+	/// shadow a narrower read/write grant nested beneath it).
 	#[napi]
 	pub fn query_path(&self, path: String, mode: SandboxAccessMode) -> bool {
-		self
-			.inner
-			.path_covered_with_access(Path::new(&path), AccessMode::from(mode))
+		let required = AccessMode::from(mode);
+		let path = Path::new(&path);
+		let resolved = nono::path::try_canonicalize(path);
+		self.inner.fs_capabilities().iter().any(|cap| {
+			let covers = if cap.is_file {
+				resolved == cap.resolved || path == cap.original.as_path()
+			} else {
+				resolved.starts_with(&cap.resolved) || path.starts_with(&cap.original)
+			};
+			covers && cap.access.contains(required)
+		})
 	}
 
 	/// Get a human-readable summary of the capabilities.
