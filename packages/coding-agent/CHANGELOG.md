@@ -4,14 +4,19 @@
 ### Breaking Changes
 
 - Changed PR and task-isolation worktree directory layout to hash-based `~/.omp/wt/<identifier>-<path-hash>` style paths, replacing the previous nested encoded-repo layout
+- Changed `/daybook` and `/daybook-usage` to merge into the period's note (e.g. an Obsidian daily note) instead of writing standalone files: each owns a `%% daybook %%` / `%% daybook-usage %%` region and leaves the rest of the note untouched. `/daybook-usage` no longer writes `usage-*.md` files
 
 ### Added
 
+- Added `daybook.template` and `daybook.weeklyTemplate` settings: Obsidian templates used when `/daybook` creates a new daily / weekly note. Fills `{{title}}` and `{{date}}`, plus `{{start}}`, `{{end}}` and `{{days}}` (links to the week's daily notes) for weekly notes
 - Added `omp worktree` command (alias `wt`) to list and manage agent-managed worktrees under `~/.omp/wt`
 - Added `omp worktree clear` to remove orphaned worktree directories, with `--all` to include live PR-checkouts, `--dry-run` for preview, and `--json` reporting
 - Added machine-readable JSON output to `omp worktree list` for scripted inspection
 - Added the config-toggled `ponytail` ruleset extension: `ponytail.enabled` (default `false`) gates injecting the lazy-senior-dev ruleset into the system prompt, `ponytail.defaultMode` (`off`/`lite`/`full`/`ultra`, default `full`) sets the starting intensity, and `/ponytail [lite|full|ultra|off]` switches/reports the per-session mode (persisted and restored on session start). The extension self-gates when disabled and returns the correct `string[]` system prompt. The upstream `@dietrichgebert/ponytail` npm plugin stays disabled (its own extension is incompatible with omp and is not executed)
 - Added global `ponytail-review`, `ponytail-audit`, `ponytail-debt`, `ponytail-gain`, and `ponytail-help` native skills under `.omp/skills/` (vendored from ponytail, MIT)
+- Added a fact-check pass to `/review`: when a review produces 3 or more findings, a cheap `review_filter` agent re-checks each one against the diff and removes only those it can prove wrong, quoting the contradicting line. Findings on memory safety, concurrency, declaration consistency, behavioral changes, and unused parameters are never removed, and any filter failure keeps every finding. The number removed is reported rather than dropped silently
+- Added coverage accounting to `/review`: every changed file must end the review either reviewed or skipped with a concrete reason, and the summary now reports `N/M files reviewed` along with any skipped files. Reviewing a file no longer counts as covering its header, interface, schema, or config counterpart
+- Added anchor validation to review findings: a finding whose line range does not touch the patch is now rejected with the file's actual changed lines so the reviewer can re-anchor and retry, instead of being filed against unrelated code. Validation is advisory — untracked files, non-repo directories, and git failures all accept the finding
 
 ### Changed
 
@@ -27,6 +32,7 @@
 ### Fixed
 
 - Fixed loop mode submitting the next prompt while a background async-job delivery turn (idle flush) was still pending, which could cause the job result to be silently dropped and make the session appear to keep firing while work was ongoing ([#1294](https://github.com/can1357/oh-my-pi/issues/1294))
+- Fixed `/review` counting a file twice when reviewing uncommitted changes and the file had both staged and unstaged edits, which inflated the changed-file count and split one file's changes across two entries
 
 ### Added
 
