@@ -300,6 +300,13 @@ export interface AgentSessionConfig {
 		caps?: import("@oh-my-pi/pi-natives").SandboxCaps;
 		env?: Record<string, string>;
 	};
+	/**
+	 * Releases resources that only this session's background work used (the
+	 * sandbox proxy claim). `dispose()` calls it once every background job is
+	 * stopped and before shutdown hooks run, so a hook that never returns cannot
+	 * keep those resources alive.
+	 */
+	releaseBackgroundResources?: () => void;
 }
 
 /** Options for AgentSession.prompt() */
@@ -654,6 +661,7 @@ export class AgentSession {
 	#obfuscator: SecretObfuscator | undefined;
 	#updateToolSessionCwd: ((cwd: string) => void) | undefined;
 	#getSandboxState: AgentSessionConfig["getSandboxState"];
+	#releaseBackgroundResources: AgentSessionConfig["releaseBackgroundResources"];
 	#checkpointState: CheckpointState | undefined = undefined;
 	#pendingRewindReport: string | undefined = undefined;
 	#lastSuccessfulYieldToolCallId: string | undefined = undefined;
@@ -743,6 +751,7 @@ export class AgentSession {
 		this.#obfuscator = config.obfuscator;
 		this.#updateToolSessionCwd = config.updateToolSessionCwd;
 		this.#getSandboxState = config.getSandboxState;
+		this.#releaseBackgroundResources = config.releaseBackgroundResources;
 		this.#agentId = config.agentId;
 		this.#agentRegistry = config.agentRegistry;
 		this.agent.setAssistantMessageEventInterceptor((message, assistantMessageEvent) => {
@@ -2115,6 +2124,10 @@ export class AgentSession {
 	 */
 	async dispose(): Promise<void> {
 		this.#evalExecutionDisposing = true;
+		// Kill background jobs first: the session is closing, so their output is
+		// abandoned, and they must stop before the resources they use are released.
+		await this.#asyncJobManager?.dispose();
+		this.#releaseBackgroundResources?.();
 		try {
 			if (this.#extensionRunner?.hasHandlers("session_shutdown")) {
 				await this.#extensionRunner.emit({ type: "session_shutdown" });
@@ -2123,11 +2136,6 @@ export class AgentSession {
 			logger.warn("Failed to emit session_shutdown event", { error: String(error) });
 		}
 		await this.#cancelPostPromptTasks();
-		const drained = await this.#asyncJobManager?.dispose({ timeoutMs: 3_000 });
-		const deliveryState = this.#asyncJobManager?.getDeliveryState();
-		if (drained === false && deliveryState) {
-			logger.warn("Async job completion deliveries still pending during dispose", { ...deliveryState });
-		}
 		const pythonExecutionsSettled = await this.#prepareEvalExecutionsForDispose();
 		if (!pythonExecutionsSettled) {
 			logger.warn(

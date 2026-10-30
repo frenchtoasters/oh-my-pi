@@ -969,6 +969,16 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	const resolvedAgentDisplayName =
 		options.agentDisplayName ?? ((options.taskDepth ?? 0) > 0 || options.parentTaskPrefix ? "sub" : "main");
 	const evalKernelOwnerId = `agent-session:${Snowflake.next()}`;
+	// Sandbox proxy claim (refcounted, shared across sessions with the same host
+	// list). Released exactly once, by dispose or by the startup-failure path:
+	// a missed release leaks the proxy, an extra one cuts off peer sessions.
+	let claimedProxyHosts: string[] | undefined;
+	const releaseClaimedProxy = (): void => {
+		const hosts = claimedProxyHosts;
+		if (!hosts) return;
+		claimedProxyHosts = undefined;
+		releaseSandboxProxy(hosts);
+	};
 
 	try {
 		const getActiveModelString = (): string | undefined => {
@@ -1061,7 +1071,6 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			rebuildSandboxForCwd?.(newCwd);
 		};
 
-		let claimedProxyHosts: string[] | undefined;
 		// ── Sandbox initialization ──────────────────────────────────────────
 		const sandboxMode = settings.get("security.sandbox") as SandboxMode;
 		if (sandboxMode !== "off") {
@@ -1779,6 +1788,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			agentRegistry,
 			updateToolSessionCwd: toolSession.updateCwd,
 			getSandboxState: () => ({ caps: toolSession.sandboxKernelCaps, env: toolSession.sandboxEnv }),
+			releaseBackgroundResources: releaseClaimedProxy,
 		});
 		hasSession = true;
 
@@ -1800,9 +1810,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 					await originalDispose();
 				} finally {
 					agentRegistry.unregister(resolvedAgentId);
-					if (claimedProxyHosts) {
-						releaseSandboxProxy(claimedProxyHosts);
-					}
+					releaseClaimedProxy();
 				}
 			};
 		}
@@ -1932,6 +1940,8 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			logger.warn("Failed to clean up createAgentSession resources after startup error", {
 				error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
 			});
+		} finally {
+			releaseClaimedProxy();
 		}
 		throw error;
 	}

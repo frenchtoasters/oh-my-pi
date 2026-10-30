@@ -264,18 +264,23 @@ export class AsyncJobManager {
 		return true;
 	}
 
-	async dispose(options?: { timeoutMs?: number }): Promise<boolean> {
+	/**
+	 * Kill every job and drop all results. Closing the owner abandons its
+	 * background work, so nothing is delivered: pending deliveries are discarded
+	 * and jobs that finish while being killed are not enqueued. Resolves once
+	 * every job has stopped, so callers can release resources the jobs used.
+	 */
+	async dispose(): Promise<void> {
 		this.#disposed = true;
 		this.#clearEvictionTimers();
+		this.#deliveries.length = 0;
 		this.cancelAll();
 		await this.waitForAll();
-		const drained = await this.drainDeliveries({ timeoutMs: options?.timeoutMs ?? 3_000 });
 		this.#clearEvictionTimers();
 		this.#jobs.clear();
 		this.#deliveries.length = 0;
 		this.#suppressedDeliveries.clear();
 		this.#watchedJobs.clear();
-		return drained;
 	}
 
 	#resolveJobId(preferredId?: string): string {
@@ -332,7 +337,8 @@ export class AsyncJobManager {
 	}
 
 	isDeliverySuppressed(jobId: string): boolean {
-		return this.#suppressedDeliveries.has(jobId) || this.#watchedJobs.has(jobId);
+		// A disposed manager has abandoned its jobs: no result is delivered.
+		return this.#disposed || this.#suppressedDeliveries.has(jobId) || this.#watchedJobs.has(jobId);
 	}
 
 	#enqueueDelivery(jobId: string, text: string): void {

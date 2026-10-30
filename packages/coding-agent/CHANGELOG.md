@@ -20,11 +20,15 @@
 
 ### Changed
 
+- Changed agent session disposal to kill background jobs first and discard their results instead of delivering them
 - Updated PR checkout to reuse `hashPath`-based worktree roots when creating and scanning worktrees for cleanup
 - Updated `worktree` cleanup logic to gracefully prune parent git metadata after removing worktree directories
 
 ### Fixed
 
+- Fixed the sandbox network proxy for allowlist profiles (such as `librarian` and `init`) staying alive until process exit when an agent session failed to start after launching it
+- Fixed disposing an agent session twice shutting down a sandbox network proxy that another session with the same host list was still using
+- Fixed a `session_shutdown` extension hook that never returns keeping the sandbox network proxy alive after every session using it was closed
 - Fixed PR checkout failures when the default worktree path was already registered or occupied by stale leftovers by automatically selecting suffixed alternatives (`-2`, `-3`, etc.)
 
 - Fixed compaction routing to the wrong provider when `modelRoles.default` is set to a different model than the active chat. Auto- and manual compaction now prefer the active session's model and only fall back to role-based candidates when the current model has no usable credentials.

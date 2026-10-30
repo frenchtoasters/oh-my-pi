@@ -212,9 +212,11 @@ describe("AsyncJobManager", () => {
 		expect(attempts).toBe(attemptsAfterAck);
 	});
 
-	test("dispose clears jobs and pending deliveries", async () => {
+	test("dispose discards pending deliveries without waiting for them", async () => {
+		let attempts = 0;
 		const manager = new AsyncJobManager({
 			onJobComplete: async () => {
+				attempts += 1;
 				throw new Error("delivery failed");
 			},
 		});
@@ -223,10 +225,28 @@ describe("AsyncJobManager", () => {
 		await manager.waitForAll();
 		expect(manager.hasPendingDeliveries()).toBe(true);
 
-		const drained = await manager.dispose({ timeoutMs: 25 });
-		expect(drained).toBe(false);
+		await manager.dispose();
 		expect(manager.getAllJobs()).toHaveLength(0);
 		expect(manager.hasPendingDeliveries()).toBe(false);
+		const attemptsAtDispose = attempts;
+		await Bun.sleep(700);
+		expect(attempts).toBe(attemptsAtDispose);
+	});
+
+	test("dispose does not wait for a delivery that never finishes", async () => {
+		const manager = new AsyncJobManager({
+			onJobComplete: () => new Promise<void>(() => {}),
+		});
+		const jobId = manager.register("bash", "done", async () => "output");
+		await manager.waitForAll();
+		expect(manager.getDeliveryState().delivering).toBe(true);
+
+		const outcome = await Promise.race([
+			manager.dispose().then(() => "disposed"),
+			Bun.sleep(500).then(() => "waited"),
+		]);
+		expect(outcome).toBe("disposed");
+		expect(manager.isDeliverySuppressed(jobId)).toBe(true);
 	});
 
 	test("uses custom id when provided and deduplicates collisions", async () => {
