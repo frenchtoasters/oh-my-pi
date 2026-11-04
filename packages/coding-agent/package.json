@@ -84,6 +84,7 @@
 	},
 	"files": [
 		"src",
+		"bundled",
 		"scripts",
 		"examples",
 		"README.md",

@@ -8,6 +8,7 @@
 
 ### Added
 
+- Added a `bundled` skill source that loads the ponytail, statechart, technical-writing, and unslop skills from `packages/coding-agent/bundled/skills/`. It has the lowest priority, so a user, project, or other tool's skill with the same name replaces the bundled one. A `bun build --compile` binary does not include these files
 - Added `daybook.template` and `daybook.weeklyTemplate` settings: Obsidian templates used when `/daybook` creates a new daily / weekly note. Fills `{{title}}` and `{{date}}`, plus `{{start}}`, `{{end}}` and `{{days}}` (links to the week's daily notes) for weekly notes
 - Added `omp worktree` command (alias `wt`) to list and manage agent-managed worktrees under `~/.omp/wt`
 - Added `omp worktree clear` to remove orphaned worktree directories, with `--all` to include live PR-checkouts, `--dry-run` for preview, and `--json` reporting
