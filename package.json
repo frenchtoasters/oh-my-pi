@@ -27,7 +27,7 @@
 			"@oh-my-pi/pi-natives": "14.7.3",
 			"@oh-my-pi/pi-tui": "14.7.3",
 			"@oh-my-pi/pi-utils": "14.7.3",
-			"@puppeteer/browsers": "^2.13.0",
+			"@puppeteer/browsers": "^3.2.5",
 			"@sinclair/typebox": "^0.34.49",
 			"@tailwindcss/node": "^4.2.4",
 			"@types/babel__generator": "^7.27.0",
@@ -45,8 +45,8 @@
 			"chart.js": "^4.5.1",
 			"date-fns": "^4.1.0",
 			"diff": "^9.0.0",
-			"fflate": "0.8.2",
-			"handlebars": "^4.7.9",
+			"fflate": "0.8.3",
+			"handlebars": "^4.7.10",
 			"linkedom": "^0.18.12",
 			"lint-staged": "^16.4.0",
 			"lru-cache": "11.3.6",
@@ -55,10 +55,10 @@
 			"markit-ai": "0.5.3",
 			"openai": "^6.36.0",
 			"partial-json": "^0.1.7",
-			"postcss": "^8.5.14",
+			"postcss": "^8.5.31",
 			"prettier": "^3.8.3",
 			"proxy-agent": "^8.0.1",
-			"puppeteer-core": "^24.42.0",
+			"puppeteer-core": "^25.15.0",
 			"react": "19.2.5",
 			"react-chartjs-2": "^5.3.1",
 			"react-dom": "19.2.5",
@@ -69,12 +69,13 @@
 			"typescript": "^6.0.3",
 			"winston": "^3.19.0",
 			"winston-daily-rotate-file": "^5.0.0",
-			"zod": "4.4.3"
+			"zod": "4.6.7"
 		}
 	},
 	"overrides": {
 		"ajv": "8.20.0",
-		"@types/node": ">=22"
+		"@types/node": ">=22",
+		"basic-ftp": "^6.2.3"
 	},
 	"scripts": {
 		"install:dev": "bun install && bun --cwd=packages/coding-agent link && bun --cwd=packages/ai link",

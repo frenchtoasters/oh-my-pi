@@ -33,6 +33,14 @@
 
 - Fixed compaction routing to the wrong provider when `modelRoles.default` is set to a different model than the active chat. Auto- and manual compaction now prefer the active session's model and only fall back to role-based candidates when the current model has no usable credentials.
 
+### Security
+
+- Updated `handlebars` to 4.7.10. Earlier versions let a crafted prompt template or slash-command file run JavaScript when the agent compiled it
+- Updated `fflate` to 0.8.3. A malformed ZIP64 archive no longer hangs the archive reader
+- Updated `puppeteer-core` to 25.15.0 and `@puppeteer/browsers` to 3.2.5, which removes `extract-zip` and its symlink path-traversal bugs. Chromium downloads now extract with the system `unzip` (or `tar.exe` or PowerShell on Windows)
+- Updated `zod` to 4.6.7, and updated `axios`, `form-data`, `@xmldom/xmldom`, `music-metadata`, `fast-uri`, `protobufjs`, `ws`, `ip-address`, `moment`, and `basic-ftp` to versions that fix published advisories
+- Updated `follow-redirects` to 1.16.1, which fixes two of its three credential-header advisories. The third needs 1.16.2
+
 ### Fixed
 
 - Fixed loop mode submitting the next prompt while a background async-job delivery turn (idle flush) was still pending, which could cause the job result to be silently dropped and make the session appear to keep firing while work was ongoing ([#1294](https://github.com/can1357/oh-my-pi/issues/1294))

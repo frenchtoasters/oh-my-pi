@@ -42,6 +42,8 @@ pub fn html_to_markdown(
 		};
 
 		convert(html.as_str(), Some(conversion_opts))
-			.map_err(|err| Error::from_reason(format!("Conversion error: {err}")))
+			.map_err(|err| Error::from_reason(format!("Conversion error: {err}")))?
+			.content
+			.ok_or_else(|| Error::from_reason("Conversion error: no markdown content produced"))
 	})
 }

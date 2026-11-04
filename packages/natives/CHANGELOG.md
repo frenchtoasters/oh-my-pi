@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Security
+
+- Updated `rustls` to 0.23.46, `rustls-webpki` to 0.103.16, and `webpki-roots` to 1.0.11 in the sandbox network proxy. This fixes TLS secrets in `Debug` output, a ServerHello key-exchange downgrade, and trust in distrusted intermediates
+- Updated `tokio` to 1.54.1 and replaced the unsound `AsyncFd::new` calls in shell output capture with `AsyncFd::register`
+- Updated `html-to-markdown-rs` to 3.18.5, which drops the vulnerable `lru` 0.16
+- Updated `h2`, `quick-xml`, `anyhow`, `memmap2`, `crossbeam-epoch`, `block-buffer`, and `xxhash-rust` to versions that fix published advisories
+
 ## [14.7.1] - 2026-05-06
 
 ### Added
